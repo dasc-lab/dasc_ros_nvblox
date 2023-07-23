@@ -37,14 +37,28 @@ __device__ bool getVoxelIntensity(const OccupancyVoxel& voxel, float voxel_size,
   return probabilityFromLogOdds(voxel.log_odds) > kMinProbability;
 }
 
+// template <>
+// __device__ bool getVoxelIntensity(const EsdfVoxel& voxel, float voxel_size,
+//                                   float* intensity) {
+//   *intensity = voxel_size * sqrtf(voxel.squared_distance_vox);
+//   if (voxel.is_inside) {
+//     *intensity = -*intensity;
+//   }
+//   return voxel.observed;
+// }
 template <>
 __device__ bool getVoxelIntensity(const EsdfVoxel& voxel, float voxel_size,
                                   float* intensity) {
-  *intensity = voxel_size * sqrtf(voxel.squared_distance_vox);
-  if (voxel.is_inside) {
-    *intensity = -*intensity;
+  // if unobserved, set ESDF to -1.0f;
+  if (!voxel.observed) {
+    *intensity = -1.0f;
+    return true;
   }
-  return voxel.observed;
+
+  *intensity = voxel_size * sqrtf(voxel.squared_distance_vox);
+
+  // publish unobserved cells and surface cells
+  return (!voxel.observed || voxel.is_site);
 }
 
 template <>

@@ -94,6 +94,7 @@ public:
   virtual void processColorQueue();
   virtual void processPointcloudQueue();
   virtual void processEsdf();
+  virtual void publishEsdf3d();
   virtual void processMesh();
 
   // Publish data on fixed frequency
@@ -203,6 +204,8 @@ protected:
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     esdf_pointcloud_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      esdfAABB_pointcloud_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
     occupancy_publisher_;
   rclcpp::Publisher<nvblox_msgs::msg::DistanceMapSlice>::SharedPtr
     map_slice_publisher_;
@@ -225,6 +228,7 @@ protected:
   rclcpp::TimerBase::SharedPtr pointcloud_processing_timer_;
   rclcpp::TimerBase::SharedPtr occupancy_publishing_timer_;
   rclcpp::TimerBase::SharedPtr esdf_processing_timer_;
+  rclcpp::TimerBase::SharedPtr esdf_3d_publish_timer_;
   rclcpp::TimerBase::SharedPtr mesh_processing_timer_;
   rclcpp::TimerBase::SharedPtr clear_outside_radius_timer_;
 
@@ -255,6 +259,14 @@ protected:
   float esdf_2d_min_height_ = 0.0f;
   float esdf_2d_max_height_ = 1.0f;
 
+  // Used for publishing the 3D ESDF. All unobserved and surface cells within
+  // the origin_ +/- pub_range_ will be published as a
+  // sensor_msgs::msg::PointCloud2
+  std::string esdf_3d_origin_frame_id_ = "base_link";
+  float esdf_3d_pub_range_x_ = 1.0f;
+  float esdf_3d_pub_range_y_ = 1.0f;
+  float esdf_3d_pub_range_z_ = 1.0f;
+
   // Slice visualization params
   std::string slice_visualization_attachment_frame_id_ = "base_link";
   float slice_visualization_side_length_ = 10.0f;
@@ -268,6 +280,7 @@ protected:
   float max_lidar_update_hz_ = 10.0f;
   float mesh_update_rate_hz_ = 5.0f;
   float esdf_update_rate_hz_ = 2.0f;
+  float esdf_3d_publish_rate_hz_ = 5.0f;
   float occupancy_publication_rate_hz_ = 2.0f;
 
   /// Specifies what rate to poll the color & depth updates at.
@@ -288,6 +301,12 @@ protected:
   // The QoS settings for the image input topics
   std::string depth_qos_str_ = "SYSTEM_DEFAULT";
   std::string color_qos_str_ = "SYSTEM_DEFAULT";
+
+  // parameters to set some region as free
+  float mark_free_sphere_radius_ = 0.0f;
+  float mark_free_sphere_center_x_ = 0.0f;
+  float mark_free_sphere_center_y_ = 0.0f;
+  float mark_free_sphere_center_z_ = 0.0f;
 
   // Mapper
   // Holds the map layers and their associated integrators

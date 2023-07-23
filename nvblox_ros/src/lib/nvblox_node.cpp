@@ -64,6 +64,16 @@ NvbloxNode::NvbloxNode(
     static_projective_layer_type_);
   initializeMapper(mapper_name, mapper_.get(), this);
 
+  // mark initial free area
+  if (mark_free_sphere_radius_ > 0) {
+    Vector3f mark_free_sphere_center(mark_free_sphere_center_x_,
+                                     mark_free_sphere_center_y_,
+                                     mark_free_sphere_center_z_);
+
+    mapper_.get()->markUnobservedTsdfFreeInsideRadius(mark_free_sphere_center,
+                                                      mark_free_sphere_radius_);
+  }
+
   // Setup interactions with ROS
   subscribeToTopics();
   setupTimers();
@@ -127,6 +137,15 @@ void NvbloxNode::getParameters()
     declare_parameter<float>("esdf_2d_min_height", esdf_2d_min_height_);
   esdf_2d_max_height_ =
     declare_parameter<float>("esdf_2d_max_height", esdf_2d_max_height_);
+  esdf_3d_origin_frame_id_ = declare_parameter<std::string>(
+      "esdf_3d_origin_frame_id", esdf_3d_origin_frame_id_);
+  esdf_3d_pub_range_x_ =
+      declare_parameter<float>("esdf_3d_pub_range_x", esdf_3d_pub_range_x_);
+  esdf_3d_pub_range_y_ =
+      declare_parameter<float>("esdf_3d_pub_range_y", esdf_3d_pub_range_y_);
+  esdf_3d_pub_range_z_ =
+      declare_parameter<float>("esdf_3d_pub_range_z", esdf_3d_pub_range_z_);
+
   lidar_width_ = declare_parameter<int>("lidar_width", lidar_width_);
   lidar_height_ = declare_parameter<int>("lidar_height", lidar_height_);
   lidar_vertical_fov_rad_ = declare_parameter<float>(
@@ -150,6 +169,8 @@ void NvbloxNode::getParameters()
     declare_parameter<float>("mesh_update_rate_hz", mesh_update_rate_hz_);
   esdf_update_rate_hz_ =
     declare_parameter<float>("esdf_update_rate_hz", esdf_update_rate_hz_);
+  esdf_3d_publish_rate_hz_ = declare_parameter<float>("esdf_3d_publish_rate_hz",
+                                                      esdf_3d_publish_rate_hz_);
   occupancy_publication_rate_hz_ = declare_parameter<float>(
     "occupancy_publication_rate_hz", occupancy_publication_rate_hz_);
   max_poll_rate_hz_ =
@@ -171,6 +192,17 @@ void NvbloxNode::getParameters()
     "map_clearing_frame_id", map_clearing_frame_id_);
   clear_outside_radius_rate_hz_ = declare_parameter<float>(
     "clear_outside_radius_rate_hz", clear_outside_radius_rate_hz_);
+
+  // Settings for marking the initial sphere as free
+  // will only clear any area if radius > 0
+  mark_free_sphere_radius_ = declare_parameter<float>(
+      "mark_free_sphere_radius_m", mark_free_sphere_radius_);
+  mark_free_sphere_center_x_ = declare_parameter<float>(
+      "mark_free_sphere_center_x", mark_free_sphere_center_x_);
+  mark_free_sphere_center_y_ = declare_parameter<float>(
+      "mark_free_sphere_center_y", mark_free_sphere_center_y_);
+  mark_free_sphere_center_z_ = declare_parameter<float>(
+      "mark_free_sphere_center_z", mark_free_sphere_center_z_);
 }
 
 void NvbloxNode::subscribeToTopics()
@@ -244,6 +276,9 @@ void NvbloxNode::advertiseTopics()
   mesh_publisher_ = create_publisher<nvblox_msgs::msg::Mesh>("~/mesh", 1);
   esdf_pointcloud_publisher_ =
     create_publisher<sensor_msgs::msg::PointCloud2>("~/esdf_pointcloud", 1);
+  esdfAABB_pointcloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("~/esdfAABB_pointcloud",
+                                                      1);
   map_slice_publisher_ =
     create_publisher<nvblox_msgs::msg::DistanceMapSlice>("~/map_slice", 1);
   mesh_marker_publisher_ =
@@ -302,6 +337,11 @@ void NvbloxNode::setupTimers()
   esdf_processing_timer_ = create_wall_timer(
     std::chrono::duration<double>(1.0 / esdf_update_rate_hz_),
     std::bind(&NvbloxNode::processEsdf, this), group_processing_);
+  if (!esdf_2d_) {
+    esdf_3d_publish_timer_ = create_wall_timer(
+        std::chrono::duration<double>(1.0 / esdf_3d_publish_rate_hz_),
+        std::bind(&NvbloxNode::publishEsdf3d, this), group_processing_);
+  }
   mesh_processing_timer_ = create_wall_timer(
     std::chrono::duration<double>(1.0 / mesh_update_rate_hz_),
     std::bind(&NvbloxNode::processMesh, this), group_processing_);
@@ -501,6 +541,47 @@ void NvbloxNode::processEsdf()
         get_logger(), *get_clock(), kTimeBetweenDebugMessages,
         "Tried to publish slice bounds but couldn't look up frame: " <<
           slice_visualization_attachment_frame_id_);
+    }
+  }
+}
+
+void NvbloxNode::publishEsdf3d() {
+  if (!compute_esdf_ && !esdf_2d_) {
+    return;
+  }
+  const rclcpp::Time timestamp = get_clock()->now();
+  timing::Timer ros_total_timer("ros/total");
+  timing::Timer ros_esdf_timer("ros/esdf");
+  timing::Timer esdf_output_timer("ros/esdf/output");
+
+  // If anyone wants the AABB esdf, publish it here
+  if (esdfAABB_pointcloud_publisher_->get_subscription_count() > 0) {
+    timing::Timer esdf_3d_output_timer("ros/esdf/output/3d_pointcloud");
+    // first look up the transform
+    Transform T_L_EO;  // EO = esdf publisher origin frame id
+    if (transformer_.lookupTransformToGlobalFrame(esdf_3d_origin_frame_id_,
+                                                  rclcpp::Time(0), &T_L_EO)) {
+      // got the transform successfully
+      Vector3f esdf_3d_pub_origin = T_L_EO.translation();
+      Vector3f esdf_3d_pub_range(esdf_3d_pub_range_x_, esdf_3d_pub_range_y_,
+                                 esdf_3d_pub_range_z_);
+      // create AABB
+      AxisAlignedBoundingBox aabb(esdf_3d_pub_origin - esdf_3d_pub_range,
+                                  esdf_3d_pub_origin + esdf_3d_pub_range);
+
+      // populate the sensor message
+      sensor_msgs::msg::PointCloud2 pointcloud_msg;
+      layer_converter_.pointcloudMsgFromLayerInAABB(mapper_->esdf_layer(), aabb,
+                                                    &pointcloud_msg);
+      pointcloud_msg.header.frame_id = global_frame_;
+      pointcloud_msg.header.stamp = get_clock()->now();
+      esdfAABB_pointcloud_publisher_->publish(pointcloud_msg);
+    } else {
+      constexpr float kTimeBetweenDebugMessages = 1.0;
+      RCLCPP_INFO_STREAM_THROTTLE(
+          get_logger(), *get_clock(), kTimeBetweenDebugMessages,
+          "Tried to publish 3d esdf but couldn't look up frame: "
+              << esdf_3d_origin_frame_id_);
     }
   }
 }
