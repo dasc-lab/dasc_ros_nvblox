@@ -49,6 +49,9 @@
   <depend>nvblox</depend>
   <depend>nvblox_ros_common</depend>
 
+  <depend>decomp_ros_msgs</depend>
+  <depend>decomp_util</depend>
+
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <test_depend>isaac_ros_test</test_depend>

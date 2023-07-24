@@ -50,6 +50,9 @@ find_package(nvblox REQUIRED)
 find_package(visualization_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(nvblox_ros_common REQUIRED)
+find_package(decomp_util REQUIRED)
+find_package(decomp_ros_msgs REQUIRED)
+find_package(pcl_ros REQUIRED)
 
 ########
 # CUDA #
@@ -89,10 +92,15 @@ ament_target_dependencies(${PROJECT_NAME}_lib
   visualization_msgs
   cv_bridge
   nvblox_ros_common
+  decomp_util
+  decomp_ros_msgs
+  pcl_ros
 )
 target_include_directories(${PROJECT_NAME}_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
+  $<INSTALL_INTERFACE:include>
+  ${DECOMP_UTIL_INCLUDE_DIRS}
+  )
 target_include_directories(${PROJECT_NAME}_lib BEFORE PRIVATE
   $<TARGET_PROPERTY:nvblox::nvblox_eigen,INTERFACE_INCLUDE_DIRECTORIES>)
 
@@ -177,6 +185,9 @@ ament_export_dependencies(
   visualization_msgs
   cv_bridge
   nvblox_ros_common
+  decomp_util
+  decomp_ros_msgs
+  pcl_ros
 )
 
 ament_package()

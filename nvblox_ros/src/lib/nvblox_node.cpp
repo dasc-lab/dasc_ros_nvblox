@@ -289,6 +289,8 @@ void NvbloxNode::advertiseTopics()
     "~/map_slice_bounds", 1);
   occupancy_publisher_ =
     create_publisher<sensor_msgs::msg::PointCloud2>("~/occupancy", 1);
+  sfc_publisher_ =
+      create_publisher<decomp_ros_msgs::msg::PolyhedronStamped>("~/sfc", 1);
 }
 
 void NvbloxNode::advertiseServices()
@@ -337,7 +339,7 @@ void NvbloxNode::setupTimers()
   esdf_processing_timer_ = create_wall_timer(
     std::chrono::duration<double>(1.0 / esdf_update_rate_hz_),
     std::bind(&NvbloxNode::processEsdf, this), group_processing_);
-  if (!esdf_2d_) {
+  if (compute_esdf_ && !esdf_2d_) {
     esdf_3d_publish_timer_ = create_wall_timer(
         std::chrono::duration<double>(1.0 / esdf_3d_publish_rate_hz_),
         std::bind(&NvbloxNode::publishEsdf3d, this), group_processing_);
@@ -546,7 +548,7 @@ void NvbloxNode::processEsdf()
 }
 
 void NvbloxNode::publishEsdf3d() {
-  if (!compute_esdf_ && !esdf_2d_) {
+  if (!compute_esdf_ || esdf_2d_) {
     return;
   }
   const rclcpp::Time timestamp = get_clock()->now();
@@ -555,7 +557,8 @@ void NvbloxNode::publishEsdf3d() {
   timing::Timer esdf_output_timer("ros/esdf/output");
 
   // If anyone wants the AABB esdf, publish it here
-  if (esdfAABB_pointcloud_publisher_->get_subscription_count() > 0) {
+  if ((esdfAABB_pointcloud_publisher_->get_subscription_count() > 0) ||
+      (sfc_publisher_->get_subscription_count() > 0)) {
     timing::Timer esdf_3d_output_timer("ros/esdf/output/3d_pointcloud");
     // first look up the transform
     Transform T_L_EO;  // EO = esdf publisher origin frame id
@@ -569,13 +572,71 @@ void NvbloxNode::publishEsdf3d() {
       AxisAlignedBoundingBox aabb(esdf_3d_pub_origin - esdf_3d_pub_range,
                                   esdf_3d_pub_origin + esdf_3d_pub_range);
 
+      using PCLPoint = pcl::PointXYZI;
+      using PCLPointCloud = pcl::PointCloud<PCLPoint>;
+      PCLPointCloud pc;
+
       // populate the sensor message
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
       layer_converter_.pointcloudMsgFromLayerInAABB(mapper_->esdf_layer(), aabb,
                                                     &pointcloud_msg);
       pointcloud_msg.header.frame_id = global_frame_;
       pointcloud_msg.header.stamp = get_clock()->now();
-      esdfAABB_pointcloud_publisher_->publish(pointcloud_msg);
+
+      if (esdfAABB_pointcloud_publisher_->get_subscription_count() > 0) {
+        // only actually publish if someone wants the message
+        esdfAABB_pointcloud_publisher_->publish(pointcloud_msg);
+      }
+
+      if (sfc_publisher_->get_subscription_count() > 0) {
+        // only do the sfc decomposition if someone wants the message
+
+        timing::Timer ros_sfc_timer("ros/sfc");
+        timing::Timer sfc_output_timer("ros/sfc/output");
+        {
+          timing::Timer sfc_pcl_conversion_timer("ros/sfc/output/pclconv");
+
+          // now compute the sfc decomposition
+          pcl::fromROSMsg(pointcloud_msg, pc);
+          RCLCPP_DEBUG(get_logger(), "pcl has %zu points", pc.size());
+        }
+
+        // convert to decompros type
+        vec_Vec3f obs;
+        for (PCLPointCloud::const_iterator it = pc.begin(); it != pc.end();
+             ++it) {
+          obs.push_back(Vec3f(it->x, it->y, it->z));
+        }
+
+        // setup the decomposition
+        SeedDecomp3D decomp(esdf_3d_pub_origin.cast<double>());
+        decomp.set_obs(obs);
+        decomp.set_local_bbox(esdf_3d_pub_range.cast<double>());
+        decomp.dilate(0.005f);
+
+        auto poly = decomp.get_polyhedron();
+
+        // publish the polyhedron
+        decomp_ros_msgs::msg::PolyhedronStamped poly_msg;
+        poly_msg.header = pointcloud_msg.header;
+
+        for (const auto& hp : poly.hyperplanes()) {
+          geometry_msgs::msg::Point point;
+          geometry_msgs::msg::Vector3 normal;
+          point.x = hp.p_(0);
+          point.y = hp.p_(1);
+          point.z = hp.p_(2);
+          normal.x = hp.n_(0);
+          normal.y = hp.n_(1);
+          normal.z = hp.n_(2);
+
+          poly_msg.poly.ps.push_back(point);
+          poly_msg.poly.ns.push_back(normal);
+        }
+
+        sfc_publisher_->publish(poly_msg);
+      }
+
     } else {
       constexpr float kTimeBetweenDebugMessages = 1.0;
       RCLCPP_INFO_STREAM_THROTTLE(

@@ -42,6 +42,15 @@
 #include <std_msgs/msg/string.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 
+// DECOMP
+#include <decomp_geometry/geometric_utils.h>
+#include <decomp_util/line_segment.h>
+#include <decomp_util/seed_decomp.h>
+#include <decomp_ros_msgs/msg/polyhedron_stamped.hpp>
+#include <geometry_msgs/msg/point.hpp>
+#include <geometry_msgs/msg/vector3.hpp>
+#include "pcl_conversions/pcl_conversions.h"
+
 #include "nvblox_ros/conversions/image_conversions.hpp"
 #include "nvblox_ros/conversions/layer_conversions.hpp"
 #include "nvblox_ros/conversions/mesh_conversions.hpp"
@@ -213,6 +222,8 @@ protected:
     slice_bounds_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
     mesh_marker_publisher_;
+  rclcpp::Publisher<decomp_ros_msgs::msg::PolyhedronStamped>::SharedPtr
+      sfc_publisher_;
 
   // Services.
   rclcpp::Service<nvblox_msgs::srv::FilePath>::SharedPtr save_ply_service_;
