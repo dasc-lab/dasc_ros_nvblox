@@ -28,6 +28,8 @@ LayerConverter::LayerConverter() { cudaStreamCreate(&cuda_stream_); }
 template <typename VoxelType>
 __device__ bool getVoxelIntensity(const VoxelType& voxel, float voxel_size,
                                   float* intensity);
+template <typename VoxelType>
+__device__ bool getUnknownVoxelIntensity(float* intensity);
 
 template <>
 __device__ bool getVoxelIntensity(const OccupancyVoxel& voxel, float voxel_size,
@@ -57,8 +59,8 @@ __device__ bool getVoxelIntensity(const EsdfVoxel& voxel, float voxel_size,
 
   *intensity = voxel_size * sqrtf(voxel.squared_distance_vox);
 
-  // publish unobserved cells and surface cells
-  return (!voxel.observed || voxel.is_site);
+  // publish observed cells only if they are surface cells
+  return voxel.is_site;
 }
 
 template <>
@@ -68,6 +70,30 @@ __device__ bool getVoxelIntensity(const TsdfVoxel& voxel, float voxel_size,
   *intensity = voxel.distance;
   return voxel.weight > kMinWeight;
 }
+
+template<>
+__device__ bool getUnknownVoxelIntensity<OccupancyVoxel>( float* intensity)
+{
+	constexpr float kUnknownProbability = 0.5f;
+	*intensity = kUnknownProbability;
+	return true;
+}
+
+template<>
+__device__ bool getUnknownVoxelIntensity<EsdfVoxel>( float* intensity)
+{
+	*intensity = -1.0f; 
+	return true; 
+}
+
+template<>
+__device__ bool getUnknownVoxelIntensity<TsdfVoxel>(float* intensity)
+{
+	*intensity = -1.0f; 
+	return true; 
+}
+
+
 
 // Inputs: GPU hash for the E/TSDF.
 //         AABB.
@@ -93,11 +119,7 @@ __global__ void copyLayerToPCLKernel(
   }
 
   __syncthreads();
-
-  if (block_ptr == nullptr) {
-    return;
-  }
-
+  
   // For every voxel, check if it's in the AABB.
   Index3D voxel_index(threadIdx.x, threadIdx.y, threadIdx.z);
 
@@ -109,12 +131,25 @@ __global__ void copyLayerToPCLKernel(
     return;
   }
 
-  // Check if this voxel sucks or not.
-  const VoxelType& voxel =
-      block_ptr->voxels[voxel_index.x()][voxel_index.y()][voxel_index.z()];
+  // now we will try to fill in the intensity value
+  // if the block exists, we call `getVoxelIntensity` on the voxel
+  // if the block doesnt exist, we call `getUnknownVoxelIntensity` on the voxel
+ 
   float intensity = 0.0f;
-  if (!getVoxelIntensity<VoxelType>(voxel, voxel_size, &intensity)) {
-    return;
+  if (block_ptr == nullptr) {
+          // ok so the block has not been allocated, but we still care about publishing it
+          // set the intensity of the voxel to something reasonable
+          if (!getUnknownVoxelIntensity<VoxelType>(&intensity) ){
+        	 return;
+          } 
+  } else {
+          // get the actual intensity of the voxel
+          // Check if this voxel sucks or not.
+          const VoxelType& voxel =
+              block_ptr->voxels[voxel_index.x()][voxel_index.y()][voxel_index.z()];
+          if (!getVoxelIntensity<VoxelType>(voxel, voxel_size, &intensity)) {
+            return;
+          }
   }
 
   // Otherwise shove it in the output.
@@ -131,6 +166,7 @@ __global__ void copyLayerToPCLKernel(
   point.intensity = intensity;
 }
 
+
 template <typename VoxelType>
 void LayerConverter::pointcloudMsgFromLayerInAABB(
     const VoxelBlockLayer<VoxelType>& layer, const AxisAlignedBoundingBox& aabb,
@@ -144,14 +180,13 @@ void LayerConverter::pointcloudMsgFromLayerInAABB(
 
   // In case the AABB is infinite, make sure we have a finite number of
   // voxels.
-  AxisAlignedBoundingBox aabb_intersect = getAABBOfAllocatedBlocks(layer);
-  if (!aabb.isEmpty()) {
-    aabb_intersect = aabb_intersect.intersection(aabb);
-  }
+  AxisAlignedBoundingBox aabb_intersect = aabb.isEmpty() ? getAABBOfAllocatedBlocks(layer) : aabb;
 
-  // Figure out which blocks are in the AABB.
+  // Figure out which blocks are in the AABB. // EDIT(Dev): instead, give all the blocks, even unallocated ones
+  // std::vector<Index3D> block_indices =
+  //      getAllocatedBlocksWithinAABB(layer, aabb_intersect);
   std::vector<Index3D> block_indices =
-      getAllocatedBlocksWithinAABB(layer, aabb_intersect);
+	  getBlockIndicesTouchedByBoundingBox(layer.block_size(), aabb_intersect);
   // Copy to device memory.
   block_indices_device_ = block_indices;
 

@@ -555,7 +555,7 @@ void NvbloxNode::publishEsdf3d() {
   timing::Timer ros_total_timer("ros/total");
   timing::Timer ros_esdf_timer("ros/esdf");
   timing::Timer esdf_output_timer("ros/esdf/output");
-
+  
   // If anyone wants the AABB esdf, publish it here
   if ((esdfAABB_pointcloud_publisher_->get_subscription_count() > 0) ||
       (sfc_publisher_->get_subscription_count() > 0)) {
@@ -569,8 +569,14 @@ void NvbloxNode::publishEsdf3d() {
       Vector3f esdf_3d_pub_range(esdf_3d_pub_range_x_, esdf_3d_pub_range_y_,
                                  esdf_3d_pub_range_z_);
       // create AABB
-      AxisAlignedBoundingBox aabb(esdf_3d_pub_origin - esdf_3d_pub_range,
+      AxisAlignedBoundingBox aabb_full(esdf_3d_pub_origin - esdf_3d_pub_range,
                                   esdf_3d_pub_origin + esdf_3d_pub_range);
+
+      // chop off the ground
+      auto aabb_min = aabb_full.min();
+      aabb_min(2) = 0.0f;
+      AxisAlignedBoundingBox aabb ( aabb_min, aabb_full.max());
+      
 
       using PCLPoint = pcl::PointXYZI;
       using PCLPointCloud = pcl::PointCloud<PCLPoint>;
@@ -609,9 +615,11 @@ void NvbloxNode::publishEsdf3d() {
         }
 
         // setup the decomposition
-        SeedDecomp3D decomp(esdf_3d_pub_origin.cast<double>());
+	auto sfc_origin = 0.5*(aabb.min() + aabb.max());
+	auto sfc_range  = 0.5*(aabb.max() - aabb.min());
+        SeedDecomp3D decomp(sfc_origin.cast<double>());
         decomp.set_obs(obs);
-        decomp.set_local_bbox(esdf_3d_pub_range.cast<double>());
+        decomp.set_local_bbox(sfc_range.cast<double>());
         decomp.dilate(0.005f);
 
         auto poly = decomp.get_polyhedron();
