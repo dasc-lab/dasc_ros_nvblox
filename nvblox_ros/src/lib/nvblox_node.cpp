@@ -137,6 +137,7 @@ void NvbloxNode::getParameters()
     declare_parameter<float>("esdf_2d_min_height", esdf_2d_min_height_);
   esdf_2d_max_height_ =
     declare_parameter<float>("esdf_2d_max_height", esdf_2d_max_height_);
+  esdf_3d_ = declare_parameter<bool>("esdf_3d", esdf_3d_);
   esdf_3d_origin_frame_id_ = declare_parameter<std::string>(
       "esdf_3d_origin_frame_id", esdf_3d_origin_frame_id_);
   esdf_3d_pub_range_x_ =
@@ -291,6 +292,11 @@ void NvbloxNode::advertiseTopics()
     create_publisher<sensor_msgs::msg::PointCloud2>("~/occupancy", 1);
   sfc_publisher_ =
       create_publisher<decomp_ros_msgs::msg::PolyhedronStamped>("~/sfc", 1);
+
+  timing_publisher_process_depth_ = create_publisher<builtin_interfaces::msg::Duration>("/diagnostics/timing/process_depth", 1);
+  timing_publisher_process_esdf_ = create_publisher<builtin_interfaces::msg::Duration>("/diagnostics/timing/process_esdf", 1);
+  timing_publisher_process_sfc_ = create_publisher<builtin_interfaces::msg::Duration>("/diagnostics/timing/process_sfc", 1);
+
 }
 
 void NvbloxNode::advertiseServices()
@@ -317,6 +323,28 @@ void NvbloxNode::advertiseServices()
     rmw_qos_profile_services_default, group_processing_);
 }
 
+void NvbloxNode::publishTimerProcessDepth(uint64_t ns) 
+{
+  builtin_interfaces::msg::Duration msg;
+  msg.sec = 0;
+  msg.nanosec = static_cast<uint32_t>(ns);
+  timing_publisher_process_depth_->publish(msg);
+}
+void NvbloxNode::publishTimerProcessEsdf(uint64_t ns) 
+{
+  builtin_interfaces::msg::Duration msg;
+  msg.sec = 0;
+  msg.nanosec = static_cast<uint32_t>(ns);
+  timing_publisher_process_esdf_->publish(msg);
+}
+void NvbloxNode::publishTimerProcessSfc(uint64_t ns) 
+{
+  builtin_interfaces::msg::Duration msg;
+  msg.sec = 0;
+  msg.nanosec = static_cast<uint32_t>(ns);
+  timing_publisher_process_sfc_->publish(msg);
+}
+
 void NvbloxNode::setupTimers()
 {
   RCLCPP_INFO_STREAM(get_logger(), "NvbloxNode::setupTimers()");
@@ -339,7 +367,7 @@ void NvbloxNode::setupTimers()
   esdf_processing_timer_ = create_wall_timer(
     std::chrono::duration<double>(1.0 / esdf_update_rate_hz_),
     std::bind(&NvbloxNode::processEsdf, this), group_processing_);
-  if (compute_esdf_ && !esdf_2d_) {
+  if (compute_esdf_ && esdf_3d_) {
     esdf_3d_publish_timer_ = create_wall_timer(
         std::chrono::duration<double>(1.0 / esdf_3d_publish_rate_hz_),
         std::bind(&NvbloxNode::publishEsdf3d, this), group_processing_);
@@ -468,16 +496,20 @@ void NvbloxNode::processEsdf()
   const rclcpp::Time timestamp = get_clock()->now();
   timing::Timer ros_total_timer("ros/total");
   timing::Timer ros_esdf_timer("ros/esdf");
+  timing::SimpleTimer timer_esdf_integration;
+
 
   timing::Timer esdf_integration_timer("ros/esdf/integrate");
   std::vector<Index3D> updated_blocks;
-  if (esdf_2d_) {
-    updated_blocks = mapper_->updateEsdfSlice(
-      esdf_2d_min_height_, esdf_2d_max_height_, esdf_slice_height_);
-  } else {
+  // always update all the blocks
+  // if (esdf_2d_) {
+  //   updated_blocks = mapper_->updateEsdfSlice(
+  //     esdf_2d_min_height_, esdf_2d_max_height_, esdf_slice_height_);
+  // } else {
     updated_blocks = mapper_->updateEsdf();
-  }
+  // }
   esdf_integration_timer.Stop();
+  publishTimerProcessEsdf(timer_esdf_integration.elapsed_ns());
 
   if (updated_blocks.empty()) {
     return;
@@ -548,7 +580,7 @@ void NvbloxNode::processEsdf()
 }
 
 void NvbloxNode::publishEsdf3d() {
-  if (!compute_esdf_ || esdf_2d_) {
+  if (!compute_esdf_ || !esdf_3d_) {
     return;
   }
   const rclcpp::Time timestamp = get_clock()->now();
@@ -599,13 +631,10 @@ void NvbloxNode::publishEsdf3d() {
 
         timing::Timer ros_sfc_timer("ros/sfc");
         timing::Timer sfc_output_timer("ros/sfc/output");
-        {
-          timing::Timer sfc_pcl_conversion_timer("ros/sfc/output/pclconv");
-
+        timing::SimpleTimer timer_process_sfc;
           // now compute the sfc decomposition
           pcl::fromROSMsg(pointcloud_msg, pc);
           RCLCPP_DEBUG(get_logger(), "pcl has %zu points", pc.size());
-        }
 
         // convert to decompros type
         vec_Vec3f obs;
@@ -623,7 +652,8 @@ void NvbloxNode::publishEsdf3d() {
         decomp.dilate(0.005f);
 
         auto poly = decomp.get_polyhedron();
-
+        poly.shrink(voxel_size_);
+        
         // publish the polyhedron
         decomp_ros_msgs::msg::PolyhedronStamped poly_msg;
         poly_msg.header = pointcloud_msg.header;
@@ -643,6 +673,7 @@ void NvbloxNode::publishEsdf3d() {
         }
 
         sfc_publisher_->publish(poly_msg);
+        publishTimerProcessSfc(timer_process_sfc.elapsed_ns());
       }
 
     } else {
@@ -746,6 +777,7 @@ bool NvbloxNode::processDepthImage(
 {
   timing::Timer ros_depth_timer("ros/depth");
   timing::Timer transform_timer("ros/depth/transform");
+  timing::SimpleTimer timer_process_depth_image;
 
   // Message parts
   const sensor_msgs::msg::Image::ConstSharedPtr & depth_img_ptr =
@@ -788,6 +820,7 @@ bool NvbloxNode::processDepthImage(
   timing::Timer integration_timer("ros/depth/integrate");
   mapper_->integrateDepth(depth_image_, T_L_C, camera);
   integration_timer.Stop();
+  publishTimerProcessDepth(timer_process_depth_image.elapsed_ns());
   return true;
 }
 

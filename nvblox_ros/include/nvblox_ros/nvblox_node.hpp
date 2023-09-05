@@ -58,6 +58,7 @@
 #include "nvblox_ros/conversions/esdf_slice_conversions.hpp"
 #include "nvblox_ros/mapper_initialization.hpp"
 #include "nvblox_ros/transformer.hpp"
+#include "nvblox_ros/simple_timer.hpp"
 
 namespace nvblox
 {
@@ -124,6 +125,11 @@ public:
   bool canTransform(const std_msgs::msg::Header & header);
 
   void publishSlicePlane(const rclcpp::Time & timestamp, const Transform & T_L_C);
+
+  // publish timing info
+  void publishTimerProcessDepth(uint64_t ns);
+  void publishTimerProcessEsdf(uint64_t ns);
+  void publishTimerProcessSfc(uint64_t ns);
 
 protected:
   // Map clearing
@@ -224,6 +230,9 @@ protected:
     mesh_marker_publisher_;
   rclcpp::Publisher<decomp_ros_msgs::msg::PolyhedronStamped>::SharedPtr
       sfc_publisher_;
+  rclcpp::Publisher<builtin_interfaces::msg::Duration>::SharedPtr timing_publisher_process_depth_;
+  rclcpp::Publisher<builtin_interfaces::msg::Duration>::SharedPtr timing_publisher_process_esdf_;
+  rclcpp::Publisher<builtin_interfaces::msg::Duration>::SharedPtr timing_publisher_process_sfc_;
 
   // Services.
   rclcpp::Service<nvblox_msgs::srv::FilePath>::SharedPtr save_ply_service_;
@@ -246,6 +255,7 @@ protected:
   // ROS & nvblox settings
   float voxel_size_ = 0.05f;
   bool esdf_2d_ = true;
+  bool esdf_3d_ = true;
   bool esdf_distance_slice_ = true;
   float esdf_slice_height_ = 1.0f;
   ProjectiveLayerType static_projective_layer_type_ =
