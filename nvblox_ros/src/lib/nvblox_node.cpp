@@ -598,9 +598,8 @@ void NvbloxNode::publishEsdf3d() {
         // only do the sfc decomposition if someone wants the message
 
         timing::Timer ros_sfc_timer("ros/sfc");
-        timing::Timer sfc_output_timer("ros/sfc/output");
         {
-          timing::Timer sfc_pcl_conversion_timer("ros/sfc/output/pclconv");
+          timing::Timer sfc_pcl_conversion_timer("ros/sfc/pclconv");
 
           // now compute the sfc decomposition
           pcl::fromROSMsg(pointcloud_msg, pc);
@@ -609,10 +608,13 @@ void NvbloxNode::publishEsdf3d() {
 
         // convert to decompros type
         vec_Vec3f obs;
+	{ 
+		timing::Timer sfc_obs_create_timer("ros/sfc/obs_copy");
         for (PCLPointCloud::const_iterator it = pc.begin(); it != pc.end();
              ++it) {
           obs.push_back(Vec3f(it->x, it->y, it->z));
         }
+	}
 
         // setup the decomposition
 	auto sfc_origin = 0.5*(aabb.min() + aabb.max());
@@ -622,7 +624,15 @@ void NvbloxNode::publishEsdf3d() {
         decomp.set_local_bbox(sfc_range.cast<double>());
         decomp.dilate(0.005f);
 
-        auto poly = decomp.get_polyhedron();
+        Polyhedron3D poly;
+       
+	{
+	  timing::Timer sfc_get_poly_timer("ros/sfc/construct_poly");
+	  poly = decomp.get_polyhedron();
+	}
+
+	{
+		timing::Timer sfc_publish_poly_timer("ros/sfc/publish_poly");
 
         // publish the polyhedron
         decomp_ros_msgs::msg::PolyhedronStamped poly_msg;
@@ -643,6 +653,7 @@ void NvbloxNode::publishEsdf3d() {
         }
 
         sfc_publisher_->publish(poly_msg);
+	}
       }
 
     } else {
