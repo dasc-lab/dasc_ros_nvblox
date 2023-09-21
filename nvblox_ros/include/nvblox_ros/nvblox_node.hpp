@@ -319,6 +319,10 @@ protected:
   float mark_free_sphere_center_y_ = 0.0f;
   float mark_free_sphere_center_z_ = 0.0f;
 
+  float line_decomp_x_ = 1.0f;
+  float line_decomp_y_ = 0.0f;
+  float line_decomp_z_ = 0.0f;
+
   // Mapper
   // Holds the map layers and their associated integrators
   // - TsdfLayer, ColorLayer, EsdfLayer, MeshLayer

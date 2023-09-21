@@ -158,6 +158,10 @@ void NvbloxNode::getParameters()
   slice_visualization_side_length_ = declare_parameter<float>(
     "slice_visualization_side_length", slice_visualization_side_length_);
 
+  line_decomp_x_ = declare_parameter<float>("line_decomp_x", line_decomp_x_);
+  line_decomp_y_ = declare_parameter<float>("line_decomp_y", line_decomp_y_);
+  line_decomp_z_ = declare_parameter<float>("line_decomp_z", line_decomp_z_);
+
   // Update rates
   max_depth_update_hz_ =
     declare_parameter<float>("max_depth_update_hz", max_depth_update_hz_);
@@ -619,13 +623,16 @@ void NvbloxNode::publishEsdf3d() {
         // setup the decomposition
 	auto sfc_origin = 0.5*(aabb.min() + aabb.max());
 	auto sfc_range  = 0.5*(aabb.max() - aabb.min());
-        SeedDecomp3D decomp(sfc_origin.cast<double>());
+        auto sfc_plus_x =
+            T_L_EO * Vector3f(line_decomp_x_, line_decomp_y_, line_decomp_z_);
+        // SeedDecomp3D decomp(sfc_origin.cast<double>());
+        LineSegment3D decomp(sfc_origin.cast<double>(),
+                             sfc_plus_x.cast<double>());
         decomp.set_obs(obs);
         decomp.set_local_bbox(sfc_range.cast<double>());
         decomp.dilate(0.005f);
 
         Polyhedron3D poly;
-       
 	{
 	  timing::Timer sfc_get_poly_timer("ros/sfc/construct_poly");
 	  poly = decomp.get_polyhedron();
