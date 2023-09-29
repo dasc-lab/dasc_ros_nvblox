@@ -580,7 +580,6 @@ void NvbloxNode::publishEsdf3d() {
       auto aabb_min = aabb_full.min();
       aabb_min(2) = 0.0f;
       AxisAlignedBoundingBox aabb ( aabb_min, aabb_full.max());
-      
 
       using PCLPoint = pcl::PointXYZI;
       using PCLPointCloud = pcl::PointCloud<PCLPoint>;
@@ -625,13 +624,18 @@ void NvbloxNode::publishEsdf3d() {
 	auto sfc_range  = 0.5*(aabb.max() - aabb.min());
         auto sfc_plus_x =
             T_L_EO * Vector3f(line_decomp_x_, line_decomp_y_, line_decomp_z_);
+
+	sfc_plus_x(2) = sfc_origin(2); // correct for the z offset caused by chopping off the ground
+
+	// RCLCPP_INFO(get_logger(), "sfc_origin (%f, %f,%f), plus_x (%f, %f, %f)",  sfc_origin(0), sfc_origin(1), sfc_origin(2), sfc_plus_x(0), sfc_plus_x(1), sfc_plus_x(2));
+
         // SeedDecomp3D decomp(sfc_origin.cast<double>());
         LineSegment3D decomp(sfc_origin.cast<double>(),
                              sfc_plus_x.cast<double>());
         decomp.set_obs(obs);
         decomp.set_local_bbox(sfc_range.cast<double>());
         decomp.dilate(0.005f);
-
+	
         Polyhedron3D poly;
 	{
 	  timing::Timer sfc_get_poly_timer("ros/sfc/construct_poly");
