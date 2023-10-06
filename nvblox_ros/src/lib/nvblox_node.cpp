@@ -159,6 +159,10 @@ void NvbloxNode::getParameters()
   slice_visualization_side_length_ = declare_parameter<float>(
     "slice_visualization_side_length", slice_visualization_side_length_);
 
+  line_decomp_x_ = declare_parameter<float>("line_decomp_x", line_decomp_x_);
+  line_decomp_y_ = declare_parameter<float>("line_decomp_y", line_decomp_y_);
+  line_decomp_z_ = declare_parameter<float>("line_decomp_z", line_decomp_z_);
+
   // Update rates
   max_depth_update_hz_ =
     declare_parameter<float>("max_depth_update_hz", max_depth_update_hz_);
@@ -608,7 +612,6 @@ void NvbloxNode::publishEsdf3d() {
       auto aabb_min = aabb_full.min();
       aabb_min(2) = 0.0f;
       AxisAlignedBoundingBox aabb ( aabb_min, aabb_full.max());
-      
 
       using PCLPoint = pcl::PointXYZI;
       using PCLPointCloud = pcl::PointCloud<PCLPoint>;
@@ -632,50 +635,71 @@ void NvbloxNode::publishEsdf3d() {
         timing::Timer ros_sfc_timer("ros/sfc");
         timing::Timer sfc_output_timer("ros/sfc/output");
         timing::SimpleTimer timer_process_sfc;
+        {
+          timing::Timer sfc_pcl_conversion_timer("ros/sfc/pclconv");
           // now compute the sfc decomposition
           pcl::fromROSMsg(pointcloud_msg, pc);
           RCLCPP_DEBUG(get_logger(), "pcl has %zu points", pc.size());
+        }
 
         // convert to decompros type
         vec_Vec3f obs;
-        for (PCLPointCloud::const_iterator it = pc.begin(); it != pc.end();
-             ++it) {
-          obs.push_back(Vec3f(it->x, it->y, it->z));
+        {
+          timing::Timer sfc_obs_create_timer("ros/sfc/obs_copy");
+          for (PCLPointCloud::const_iterator it = pc.begin(); it != pc.end();
+               ++it) {
+            obs.push_back(Vec3f(it->x, it->y, it->z));
+          }
         }
 
         // setup the decomposition
-	auto sfc_origin = 0.5*(aabb.min() + aabb.max());
-	auto sfc_range  = 0.5*(aabb.max() - aabb.min());
-        SeedDecomp3D decomp(sfc_origin.cast<double>());
+        auto sfc_origin = 0.5 * (aabb.min() + aabb.max());
+        auto sfc_range = 0.5 * (aabb.max() - aabb.min());
+        auto sfc_plus_x =
+            T_L_EO * Vector3f(line_decomp_x_, line_decomp_y_, line_decomp_z_);
+
+        sfc_plus_x(2) = sfc_origin(
+            2);  // correct for the z offset caused by chopping off the ground
+
+        // SeedDecomp3D decomp(sfc_origin.cast<double>());
+        LineSegment3D decomp(sfc_origin.cast<double>(),
+                             sfc_plus_x.cast<double>());
         decomp.set_obs(obs);
         decomp.set_local_bbox(sfc_range.cast<double>());
         decomp.dilate(0.005f);
 
-        auto poly = decomp.get_polyhedron();
-        poly.shrink(voxel_size_);
-        
-        // publish the polyhedron
-        decomp_ros_msgs::msg::PolyhedronStamped poly_msg;
-        poly_msg.header = pointcloud_msg.header;
-
-        for (const auto& hp : poly.hyperplanes()) {
-          geometry_msgs::msg::Point point;
-          geometry_msgs::msg::Vector3 normal;
-          point.x = hp.p_(0);
-          point.y = hp.p_(1);
-          point.z = hp.p_(2);
-          normal.x = hp.n_(0);
-          normal.y = hp.n_(1);
-          normal.z = hp.n_(2);
-
-          poly_msg.poly.ps.push_back(point);
-          poly_msg.poly.ns.push_back(normal);
+        Polyhedron3D poly;
+        {
+          timing::Timer sfc_get_poly_timer("ros/sfc/construct_poly");
+          poly = decomp.get_polyhedron();
+          poly.shrink(voxel_size_);
         }
 
-        sfc_publisher_->publish(poly_msg);
-        publishTimerProcessSfc(timer_process_sfc.elapsed_ns());
-      }
+        {
+          timing::Timer sfc_publish_poly_timer("ros/sfc/publish_poly");
 
+          // publish the polyhedron
+          decomp_ros_msgs::msg::PolyhedronStamped poly_msg;
+          poly_msg.header = pointcloud_msg.header;
+
+          for (const auto& hp : poly.hyperplanes()) {
+            geometry_msgs::msg::Point point;
+            geometry_msgs::msg::Vector3 normal;
+            point.x = hp.p_(0);
+            point.y = hp.p_(1);
+            point.z = hp.p_(2);
+            normal.x = hp.n_(0);
+            normal.y = hp.n_(1);
+            normal.z = hp.n_(2);
+
+            poly_msg.poly.ps.push_back(point);
+            poly_msg.poly.ns.push_back(normal);
+          }
+
+          sfc_publisher_->publish(poly_msg);
+          publishTimerProcessSfc(timer_process_sfc.elapsed_ns());
+        }
+      }
     } else {
       constexpr float kTimeBetweenDebugMessages = 1.0;
       RCLCPP_INFO_STREAM_THROTTLE(
