@@ -48,6 +48,8 @@
 #include <decomp_util/seed_decomp.h>
 #include <decomp_ros_msgs/msg/polyhedron_stamped.hpp>
 #include <geometry_msgs/msg/point.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+#include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include "pcl_conversions/pcl_conversions.h"
 
@@ -85,7 +87,8 @@ class NvbloxNode : public rclcpp::Node {
   void pointcloudCallback(
       const sensor_msgs::msg::PointCloud2::ConstSharedPtr pointcloud);
   void poseCovCallback(
-      const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr pose_with_cov);
+      const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr
+          pose_with_cov);
 
   void savePly(
       const std::shared_ptr<nvblox_msgs::srv::FilePath::Request> request,
@@ -122,7 +125,8 @@ class NvbloxNode : public rclcpp::Node {
   virtual bool processLidarPointcloud(
       const sensor_msgs::msg::PointCloud2::ConstSharedPtr& pointcloud_ptr);
   virtual bool processPoseCov(
-      const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr& pose_with_err);
+      const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr&
+          pose_cov);
 
   bool canTransform(const std_msgs::msg::Header& header);
 
@@ -207,8 +211,7 @@ class NvbloxNode : public rclcpp::Node {
   // Optional transform subs.
   rclcpp::Subscription<geometry_msgs::msg::TransformStamped>::SharedPtr
       transform_sub_;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr
-      pose_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
       pose_cov_sub_;
 
@@ -241,6 +244,7 @@ class NvbloxNode : public rclcpp::Node {
   rclcpp::TimerBase::SharedPtr depth_processing_timer_;
   rclcpp::TimerBase::SharedPtr color_processing_timer_;
   rclcpp::TimerBase::SharedPtr pointcloud_processing_timer_;
+  rclcpp::TimerBase::SharedPtr pose_cov_processing_timer_;
   rclcpp::TimerBase::SharedPtr occupancy_publishing_timer_;
   rclcpp::TimerBase::SharedPtr esdf_processing_timer_;
   rclcpp::TimerBase::SharedPtr esdf_3d_publish_timer_;
@@ -260,6 +264,7 @@ class NvbloxNode : public rclcpp::Node {
   bool use_depth_ = true;
   bool use_lidar_ = true;
   bool use_color_ = true;
+  bool use_certified_tsdf_ = true;
   bool compute_esdf_ = true;
   bool compute_mesh_ = true;
 
@@ -353,7 +358,8 @@ class NvbloxNode : public rclcpp::Node {
       ReceivedMessagePeriodCollector<sensor_msgs::msg::PointCloud2>
           pointcloud_frame_statistics_;
   libstatistics_collector::topic_statistics_collector::
-      ReceivedMessagePeriodCollector<geometry_msgs::msg::PoseWithCovarianceStamped>
+      ReceivedMessagePeriodCollector<
+          geometry_msgs::msg::PoseWithCovarianceStamped>
           pose_with_cov_frame_statistics_;
 
   // State for integrators running at various speeds.
@@ -372,7 +378,8 @@ class NvbloxNode : public rclcpp::Node {
                        sensor_msgs::msg::CameraInfo::ConstSharedPtr>>
       color_image_queue_;
   std::deque<sensor_msgs::msg::PointCloud2::ConstSharedPtr> pointcloud_queue_;
-  std::deque<geometry_msgs::PoseWithCovarianceStamped::ConstSharedPtr> pose_cov_queue_;
+  std::deque<geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr>
+      pose_cov_queue_;
 
   // Image queue mutexes.
   std::mutex depth_queue_mutex_;

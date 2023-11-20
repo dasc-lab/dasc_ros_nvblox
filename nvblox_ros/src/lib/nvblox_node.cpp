@@ -32,6 +32,9 @@
 
 #include "nvblox_ros/visualization.hpp"
 
+// #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
+// #include <geometry_msgs/msg/pose.hpp>
+
 namespace nvblox {
 
 NvbloxNode::NvbloxNode(const rclcpp::NodeOptions& options,
@@ -125,6 +128,8 @@ void NvbloxNode::getParameters() {
   use_color_ = declare_parameter<bool>("use_color", use_color_);
   use_depth_ = declare_parameter<bool>("use_depth", use_depth_);
   use_lidar_ = declare_parameter<bool>("use_lidar", use_lidar_);
+  use_certified_tsdf_ =
+      declare_parameter<bool>("use_certified_tsdf_", use_certified_tsdf_);
   esdf_slice_height_ =
       declare_parameter<float>("esdf_slice_height", esdf_slice_height_);
   esdf_2d_min_height_ =
@@ -252,13 +257,15 @@ void NvbloxNode::subscribeToTopics() {
       "pose", 10,
       std::bind(&Transformer::poseCallback, &transformer_,
                 std::placeholders::_1));
-  pose_cov_sub_ =
-      create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-          "pose_cov", 10,
-          std::bind(&NvbloxNode::poseCovCallback,
-                    this,  // TODO(rgg): make a different function name if this
-                           // causes issues.
-                    std::placeholders::_1));
+  if (use_certified_tsdf_) {
+    pose_cov_sub_ =
+        create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+            "pose_cov", 10,
+            std::bind(&NvbloxNode::poseCovCallback,
+                      this,  // TODO(rgg): make a different function name if
+                             // this causes issues.
+                      std::placeholders::_1));
+  }
 }
 
 void NvbloxNode::advertiseTopics() {
@@ -320,6 +327,11 @@ void NvbloxNode::setupTimers() {
         std::chrono::duration<double>(1.0 / max_poll_rate_hz_),
         std::bind(&NvbloxNode::processPointcloudQueue, this),
         group_processing_);
+  }
+  if (use_certified_tsdf_) {
+    pose_cov_processing_timer_ = create_wall_timer(
+        std::chrono::duration<double>(1.0 / max_poll_rate_hz_),
+        std::bind(&NvbloxNode::processPoseCovQueue, this), group_processing_);
   }
   esdf_processing_timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / esdf_update_rate_hz_),
@@ -439,18 +451,18 @@ void NvbloxNode::processPointcloudQueue() {
 }
 
 void NvbloxNode::processPoseCovQueue() {
-  using PoseCovMsg = sensor_msgs::msg::PointCloud2::ConstSharedPtr;
+  using PoseCovMsg = geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr;
   // TODO(rgg): relevant in the context of poses?
   auto message_ready = [this](const PoseCovMsg& msg) {
-    return this->canTransform(msg->header);
+    return this->canTransform(
+        msg->header);  // Replace with return true if needed.
   };
   processMessageQueue<PoseCovMsg>(&pose_cov_queue_,        // NOLINT
-                                   &pose_cov_queue_mutex_,  // NOLINT
-                                   message_ready,           // NOLINT
-                                   std::bind(&NvbloxNode::processPoseCov, this,
-                                             this, std::placeholders::_1));
-
-  // TODO(rgg): assess impact of deleting this, as if it occurs it will
+                                  &pose_cov_queue_mutex_,  // NOLINT
+                                  message_ready,           // NOLINT
+                                  std::bind(&NvbloxNode::processPoseCov, this,
+                                            std::placeholders::_1));
+  // TODO(rgg): assess impact of removing rate limit, as if it occurs it will
   // compromise theoretical safety guarantee.
   limitQueueSizeByDeletingOldestMessages(maximum_sensor_message_queue_length_,
                                          "pose_cov", &pose_cov_queue_,
@@ -746,16 +758,23 @@ bool NvbloxNode::isUpdateTooFrequent(const rclcpp::Time& current_stamp,
   return false;
 }
 
-bool NvbloxNode::processPoseCov(geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr pose_cov) {
-  // Extract actiual pose (not PoseWithCovariance)
-  geometry_msgs::msgs::Pose pose = pose_cov->pose.pose;
-  // TODO(rgg): convert to Transform and pass to mapper
-  // Extract error information from covariance. This is a hack.
+bool NvbloxNode::processPoseCov(
+    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr& pose_cov) {
+  // Extract actiual pose (not PoseWithCovariance). This is T_G_P (global to
+  // pose). When T_P_S (pose to sensor) is identity, and the layer frame is the
+  // global frame, T_G_P is also T_L_C (layer frame to camera).
+  geometry_msgs::msg::Pose pose = pose_cov->pose.pose;
+  Transform T_L_C =
+      transformer_.poseToEigen(pose);  // This method could be static
+  // Extract error information from covariance. This is a hack to avoid a new
+  // message type.
   float eps_R = pose_cov->pose.covariance[0];
   float eps_t = pose_cov->pose.covariance[1];
   // Deflate the mapper's certified TSDF with the new pose and error information
   mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
+  return true;
 }
+
 bool NvbloxNode::processDepthImage(
     const std::pair<sensor_msgs::msg::Image::ConstSharedPtr,
                     sensor_msgs::msg::CameraInfo::ConstSharedPtr>&
@@ -801,12 +820,6 @@ bool NvbloxNode::processDepthImage(
   timing::Timer integration_timer("ros/depth/integrate");
   // This currently also updates certified TSDF if enabled.
   mapper_->integrateDepth(depth_image_, T_L_C, camera);
-  // TODO(rgg): Deflate the certified mesh? Or should that happen as a separate
-  // callback on a different message? It should happen here because we won't get
-  // rototranslation errors without a depth frame, and there's no point in
-  // making it asynch (and this also removes the guarantee). Use default
-  // optional value for rototranslation error so this method still works.
-  mapper_->deflateCertifiedTsdf(eps_R, eps_t);
 
   integration_timer.Stop();
   return true;

@@ -28,6 +28,7 @@
 #include <unordered_map>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
 namespace nvblox
@@ -59,8 +60,6 @@ public:
     const geometry_msgs::msg::TransformStamped::ConstSharedPtr transform_msg);
   void poseCallback(
     const geometry_msgs::msg::PoseStamped::ConstSharedPtr transform_msg);
-  void poseCallback(
-    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr transform_msg);
 
   /// Set the names of the frames.
   void set_global_frame(const std::string & global_frame)
@@ -72,6 +71,8 @@ public:
   {
     pose_frame_ = pose_frame;
   }
+
+  Transform poseToEigen(const geometry_msgs::msg::Pose & pose) const;
 
 private:
   bool lookupTransformTf(
@@ -88,7 +89,6 @@ private:
     Transform * transform);
 
   Transform transformToEigen(const geometry_msgs::msg::Transform & transform) const;
-  Transform poseToEigen(const geometry_msgs::msg::Pose & pose) const;
 
   /// ROS State
   rclcpp::Node * node_;
