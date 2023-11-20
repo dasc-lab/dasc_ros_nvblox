@@ -59,6 +59,8 @@ public:
     const geometry_msgs::msg::TransformStamped::ConstSharedPtr transform_msg);
   void poseCallback(
     const geometry_msgs::msg::PoseStamped::ConstSharedPtr transform_msg);
+  void poseCallback(
+    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr transform_msg);
 
   /// Set the names of the frames.
   void set_global_frame(const std::string & global_frame)

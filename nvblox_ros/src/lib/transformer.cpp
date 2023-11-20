@@ -95,6 +95,13 @@ void Transformer::transformCallback(
 }
 
 void Transformer::poseCallback(
+  const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr transform_msg)
+{
+  rclcpp::Time timestamp = transform_msg->header.stamp;
+  transform_queue_[timestamp.nanoseconds()] = poseToEigen(transform_msg->pose);
+}
+
+void Transformer::poseCallback(
   const geometry_msgs::msg::PoseStamped::ConstSharedPtr transform_msg)
 {
   rclcpp::Time timestamp = transform_msg->header.stamp;

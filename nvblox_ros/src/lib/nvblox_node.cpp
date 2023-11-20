@@ -252,6 +252,13 @@ void NvbloxNode::subscribeToTopics() {
       "pose", 10,
       std::bind(&Transformer::poseCallback, &transformer_,
                 std::placeholders::_1));
+  pose_cov_sub_ =
+      create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
+          "pose_cov", 10,
+          std::bind(&NvbloxNode::poseCovCallback,
+                    this,  // TODO(rgg): make a different function name if this
+                           // causes issues.
+                    std::placeholders::_1));
 }
 
 void NvbloxNode::advertiseTopics() {
@@ -367,6 +374,15 @@ void NvbloxNode::pointcloudCallback(
                        &pointcloud_queue_mutex_);
 }
 
+void NvbloxNode::poseCovCallback(
+    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr
+        pose_with_cov) {
+  printMessageArrivalStatistics(*pose_with_cov,
+                                "Pose with Covariance Statistics",
+                                &pose_with_cov_frame_statistics_);
+  pushMessageOntoQueue(pose_with_cov, &pose_cov_queue_, &pose_cov_queue_mutex_);
+}
+
 void NvbloxNode::processDepthQueue() {
   using ImageInfoMsgPair =
       std::pair<sensor_msgs::msg::Image::ConstSharedPtr,
@@ -420,6 +436,25 @@ void NvbloxNode::processPointcloudQueue() {
   limitQueueSizeByDeletingOldestMessages(maximum_sensor_message_queue_length_,
                                          "pointcloud", &pointcloud_queue_,
                                          &pointcloud_queue_mutex_);
+}
+
+void NvbloxNode::processPoseCovQueue() {
+  using PoseCovMsg = sensor_msgs::msg::PointCloud2::ConstSharedPtr;
+  // TODO(rgg): relevant in the context of poses?
+  auto message_ready = [this](const PoseCovMsg& msg) {
+    return this->canTransform(msg->header);
+  };
+  processMessageQueue<PoseCovMsg>(&pose_cov_queue_,        // NOLINT
+                                   &pose_cov_queue_mutex_,  // NOLINT
+                                   message_ready,           // NOLINT
+                                   std::bind(&NvbloxNode::processPoseCov, this,
+                                             this, std::placeholders::_1));
+
+  // TODO(rgg): assess impact of deleting this, as if it occurs it will
+  // compromise theoretical safety guarantee.
+  limitQueueSizeByDeletingOldestMessages(maximum_sensor_message_queue_length_,
+                                         "pose_cov", &pose_cov_queue_,
+                                         &pose_cov_queue_mutex_);
 }
 
 void NvbloxNode::processEsdf() {
@@ -711,6 +746,16 @@ bool NvbloxNode::isUpdateTooFrequent(const rclcpp::Time& current_stamp,
   return false;
 }
 
+bool NvbloxNode::processPoseCov(geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr pose_cov) {
+  // Extract actiual pose (not PoseWithCovariance)
+  geometry_msgs::msgs::Pose pose = pose_cov->pose.pose;
+  // TODO(rgg): convert to Transform and pass to mapper
+  // Extract error information from covariance. This is a hack.
+  float eps_R = pose_cov->pose.covariance[0];
+  float eps_t = pose_cov->pose.covariance[1];
+  // Deflate the mapper's certified TSDF with the new pose and error information
+  mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
+}
 bool NvbloxNode::processDepthImage(
     const std::pair<sensor_msgs::msg::Image::ConstSharedPtr,
                     sensor_msgs::msg::CameraInfo::ConstSharedPtr>&
@@ -758,11 +803,11 @@ bool NvbloxNode::processDepthImage(
   mapper_->integrateDepth(depth_image_, T_L_C, camera);
   // TODO(rgg): Deflate the certified mesh? Or should that happen as a separate
   // callback on a different message? It should happen here because we won't get
-  // rototranslation errors without a depth frame, and there's no point in making
-  // it asynch (and this also removes the guarantee). Use default optional value for
-  // rototranslation error so this method still works.
+  // rototranslation errors without a depth frame, and there's no point in
+  // making it asynch (and this also removes the guarantee). Use default
+  // optional value for rototranslation error so this method still works.
   mapper_->deflateCertifiedTsdf(eps_R, eps_t);
-    
+
   integration_timer.Stop();
   return true;
 }
