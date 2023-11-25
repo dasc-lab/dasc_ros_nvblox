@@ -30,8 +30,8 @@
 
 #include <nvblox_ros_common/qos.hpp>
 
-#include "nvblox_ros/visualization.hpp"
 #include "nvblox_ros/conversions/certified_esdf_slice_conversions.hpp"
+#include "nvblox_ros/visualization.hpp"
 
 // #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 // #include <geometry_msgs/msg/pose.hpp>
@@ -276,7 +276,8 @@ void NvbloxNode::advertiseTopics() {
   esdf_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("~/esdf_pointcloud", 1);
   certified_esdf_pointcloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("~/certified_esdf_pointcloud", 1);
+      create_publisher<sensor_msgs::msg::PointCloud2>(
+          "~/certified_esdf_pointcloud", 1);
   esdfAABB_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("~/esdfAABB_pointcloud",
                                                       1);
@@ -454,17 +455,18 @@ void NvbloxNode::processPointcloudQueue() {
 }
 
 void NvbloxNode::processPoseCovQueue() {
-  using PoseCovMsg = geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr;
+  using PoseCovMsg =
+      geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr;
   // TODO(rgg): relevant in the context of poses?
   auto message_ready = [this](const PoseCovMsg& msg) {
     return this->canTransform(
         msg->header);  // Replace with return true if needed.
   };
-  processMessageQueue<PoseCovMsg>(&pose_cov_queue_,        // NOLINT
-                                  &pose_cov_queue_mutex_,  // NOLINT
-                                  message_ready,           // NOLINT
-                                  std::bind(&NvbloxNode::processPoseCov, this,
-                                            std::placeholders::_1));
+  processMessageQueue<PoseCovMsg>(
+      &pose_cov_queue_,        // NOLINT
+      &pose_cov_queue_mutex_,  // NOLINT
+      message_ready,           // NOLINT
+      std::bind(&NvbloxNode::processPoseCov, this, std::placeholders::_1));
   // TODO(rgg): assess impact of removing rate limit, as if it occurs it will
   // compromise theoretical safety guarantee.
   limitQueueSizeByDeletingOldestMessages(maximum_sensor_message_queue_length_,
@@ -521,8 +523,10 @@ void NvbloxNode::processEsdf() {
     }
 
     // Slice certified ESDF pointcloud for RVIZ
-    if (certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) {
-      timing::Timer certified_esdf_output_pointcloud_timer("ros/certified_esdf/output/pointcloud");
+    if (use_certified_tsdf_ &&
+        certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) {
+      timing::Timer certified_esdf_output_pointcloud_timer(
+          "ros/certified_esdf/output/pointcloud");
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
       certified_esdf_slice_converter_.sliceImageToPointcloud(
           map_slice_image, aabb, esdf_slice_height_,
@@ -774,7 +778,8 @@ bool NvbloxNode::isUpdateTooFrequent(const rclcpp::Time& current_stamp,
 }
 
 bool NvbloxNode::processPoseCov(
-    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr& pose_cov) {
+    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr&
+        pose_cov) {
   // Extract actiual pose (not PoseWithCovariance). This is T_G_P (global to
   // pose). When T_P_S (pose to sensor) is identity, and the layer frame is the
   // global frame, T_G_P is also T_L_C (layer frame to camera).
