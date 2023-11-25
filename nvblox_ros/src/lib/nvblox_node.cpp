@@ -31,6 +31,7 @@
 #include <nvblox_ros_common/qos.hpp>
 
 #include "nvblox_ros/visualization.hpp"
+#include "nvblox_ros/conversions/certified_esdf_slice_conversions.hpp"
 
 // #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 // #include <geometry_msgs/msg/pose.hpp>
@@ -129,7 +130,7 @@ void NvbloxNode::getParameters() {
   use_depth_ = declare_parameter<bool>("use_depth", use_depth_);
   use_lidar_ = declare_parameter<bool>("use_lidar", use_lidar_);
   use_certified_tsdf_ =
-      declare_parameter<bool>("use_certified_tsdf_", use_certified_tsdf_);
+      declare_parameter<bool>("use_certified_tsdf", use_certified_tsdf_);
   esdf_slice_height_ =
       declare_parameter<float>("esdf_slice_height", esdf_slice_height_);
   esdf_2d_min_height_ =
@@ -274,6 +275,8 @@ void NvbloxNode::advertiseTopics() {
   mesh_publisher_ = create_publisher<nvblox_msgs::msg::Mesh>("~/mesh", 1);
   esdf_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("~/esdf_pointcloud", 1);
+  certified_esdf_pointcloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("~/certified_esdf_pointcloud", 1);
   esdfAABB_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("~/esdfAABB_pointcloud",
                                                       1);
@@ -515,6 +518,18 @@ void NvbloxNode::processEsdf() {
       pointcloud_msg.header.frame_id = global_frame_;
       pointcloud_msg.header.stamp = get_clock()->now();
       esdf_pointcloud_publisher_->publish(pointcloud_msg);
+    }
+
+    // Slice certified ESDF pointcloud for RVIZ
+    if (certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) {
+      timing::Timer certified_esdf_output_pointcloud_timer("ros/certified_esdf/output/pointcloud");
+      sensor_msgs::msg::PointCloud2 pointcloud_msg;
+      certified_esdf_slice_converter_.sliceImageToPointcloud(
+          map_slice_image, aabb, esdf_slice_height_,
+          mapper_->certified_esdf_layer().voxel_size(), &pointcloud_msg);
+      pointcloud_msg.header.frame_id = global_frame_;
+      pointcloud_msg.header.stamp = get_clock()->now();
+      certified_esdf_pointcloud_publisher_->publish(pointcloud_msg);
     }
 
     // Also publish the map slice (costmap for nav2).

@@ -54,6 +54,7 @@
 #include "pcl_conversions/pcl_conversions.h"
 
 #include "nvblox_ros/conversions/esdf_slice_conversions.hpp"
+#include "nvblox_ros/conversions/certified_esdf_slice_conversions.hpp"
 #include "nvblox_ros/conversions/image_conversions.hpp"
 #include "nvblox_ros/conversions/layer_conversions.hpp"
 #include "nvblox_ros/conversions/mesh_conversions.hpp"
@@ -220,6 +221,8 @@ class NvbloxNode : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       esdf_pointcloud_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      certified_esdf_pointcloud_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       esdfAABB_pointcloud_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       occupancy_publisher_;
@@ -341,6 +344,7 @@ class NvbloxNode : public rclcpp::Node {
   conversions::LayerConverter layer_converter_;
   conversions::PointcloudConverter pointcloud_converter_;
   conversions::EsdfSliceConverter esdf_slice_converter_;
+  conversions::CertifiedEsdfSliceConverter certified_esdf_slice_converter_;
 
   // Caches for GPU images
   ColorImage color_image_;

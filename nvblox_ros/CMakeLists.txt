@@ -69,6 +69,7 @@ add_library(${PROJECT_NAME}_lib SHARED
   src/lib/conversions/mesh_conversions.cpp
   src/lib/conversions/pointcloud_conversions.cu
   src/lib/conversions/esdf_slice_conversions.cu
+  src/lib/conversions/certified_esdf_slice_conversions.cu
   src/lib/visualization.cpp
   src/lib/transformer.cpp
   src/lib/mapper_initialization.cpp
