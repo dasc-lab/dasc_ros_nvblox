@@ -784,18 +784,22 @@ bool NvbloxNode::isUpdateTooFrequent(const rclcpp::Time& current_stamp,
 bool NvbloxNode::processPoseCov(
     const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr&
         pose_cov) {
-  // Extract actiual pose (not PoseWithCovariance). This is T_G_P (global to
-  // pose). When T_P_S (pose to sensor) is identity, and the layer frame is the
-  // global frame, T_G_P is also T_L_C (layer frame to camera).
-  geometry_msgs::msg::Pose pose = pose_cov->pose.pose;
-  Transform T_L_C =
-      transformer_.poseToEigen(pose);  // This method could be static
-  // Extract error information from covariance. This is a hack to avoid a new
-  // message type.
-  float eps_R = pose_cov->pose.covariance[0];
-  float eps_t = pose_cov->pose.covariance[1];
-  // Deflate the mapper's certified TSDF with the new pose and error information
-  mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
+  // Don't bother processing pose with error if certified mapping is not enbaled.
+  // There are no other consumers.
+  if mapper_->certified_mapping_enabled {
+    // Extract actiual pose (not PoseWithCovariance). This is T_G_P (global to
+    // pose). When T_P_S (pose to sensor) is identity, and the layer frame is the
+    // global frame, T_G_P is also T_L_C (layer frame to camera).
+    geometry_msgs::msg::Pose pose = pose_cov->pose.pose;
+    Transform T_L_C =
+        transformer_.poseToEigen(pose);  // This method could be static
+    // Extract error information from covariance. This is a hack to avoid a new
+    // message type.
+    float eps_R = pose_cov->pose.covariance[0];
+    float eps_t = pose_cov->pose.covariance[1];
+    // Deflate the mapper's certified TSDF with the new pose and error information
+    mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
+  }
   return true;
 }
 
