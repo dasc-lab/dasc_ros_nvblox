@@ -786,7 +786,7 @@ bool NvbloxNode::processPoseCov(
         pose_cov) {
   // Don't bother processing pose with error if certified mapping is not enbaled.
   // There are no other consumers.
-  if mapper_->certified_mapping_enabled {
+  if (mapper_->certified_mapping_enabled) {
     // Extract actiual pose (not PoseWithCovariance). This is T_G_P (global to
     // pose). When T_P_S (pose to sensor) is identity, and the layer frame is the
     // global frame, T_G_P is also T_L_C (layer frame to camera).
