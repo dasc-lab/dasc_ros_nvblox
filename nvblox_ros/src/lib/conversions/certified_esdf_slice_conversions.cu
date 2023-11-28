@@ -19,14 +19,17 @@
 
 #include "nvblox_ros/conversions/certified_esdf_slice_conversions.hpp"
 
+
 namespace nvblox {
 namespace conversions {
+
+constexpr float kDistanceMapSliceUnknownValueCert = 1000.0f;
 
 CertifiedEsdfSliceConverter::CertifiedEsdfSliceConverter() {
   cudaStreamCreate(&cuda_stream_);
 }
 
-__global__ void populateSliceFromLayerKernel(
+__global__ void populateSliceFromLayerKernelCert(
     Index3DDeviceHashMapType<CertifiedEsdfBlock> block_hash,
     AxisAlignedBoundingBox aabb, float block_size, float* image, int rows,
     int cols, float z_slice_height, float resolution, float unobserved_value) {
@@ -101,7 +104,7 @@ void CertifiedEsdfSliceConverter::populateSliceFromLayer(
   dim3 block_dim(rounded_cols, rounded_rows);
   dim3 thread_dim(kThreadDim, kThreadDim);
 
-  populateSliceFromLayerKernel<<<block_dim, thread_dim, 0, cuda_stream_>>>(
+  populateSliceFromLayerKernelCert<<<block_dim, thread_dim, 0, cuda_stream_>>>(
       gpu_layer_view.getHash().impl_, aabb, layer.block_size(),
       image->dataPtr(), image->rows(), image->cols(), z_slice_height,
       resolution, unobserved_value);
@@ -128,7 +131,7 @@ void CertifiedEsdfSliceConverter::distanceMapSliceImageFromLayer(
 
   // Fill in the float image.
   populateSliceFromLayer(layer, aabb, z_slice_level, voxel_size,
-                         kDistanceMapSliceUnknownValue, map_slice_image_ptr);
+                         kDistanceMapSliceUnknownValueCert, map_slice_image_ptr);
 }
 
 void CertifiedEsdfSliceConverter::distanceMapSliceImageFromLayer(
@@ -140,6 +143,8 @@ void CertifiedEsdfSliceConverter::distanceMapSliceImageFromLayer(
 
   // Get the AABB of the layer
   *aabb_ptr = getBoundingBoxOfLayerAtHeight(layer, z_slice_level);
+  // LOG(INFO) << "AABB for slice: " << aabb_ptr->min().transpose() << " - "
+            // << aabb_ptr->max().transpose();
 
   // Get the slice image
   distanceMapSliceImageFromLayer(layer, z_slice_level, *aabb_ptr,
@@ -163,11 +168,11 @@ void CertifiedEsdfSliceConverter::distanceMapSliceImageToMsg(
   map_slice->resolution = voxel_size;
   map_slice->width = width;
   map_slice->height = height;
-  map_slice->unknown_value = kDistanceMapSliceUnknownValue;
+  map_slice->unknown_value = kDistanceMapSliceUnknownValueCert;
 
   // Allocate the map directly, we will write directly to this output to prevent
   // copies.
-  map_slice->data.resize(width * height, kDistanceMapSliceUnknownValue);
+  map_slice->data.resize(width * height, kDistanceMapSliceUnknownValueCert);
 
   // Copy into the message
   checkCudaErrors(
@@ -275,7 +280,7 @@ __global__ void sliceImageToPointcloudKernelCert(
 
   // If map slice not observed don't add this point
   constexpr float kEps = 1e-2;
-  if (fabsf(pixel_value - kDistanceMapSliceUnknownValue) < kEps) {
+  if (fabsf(pixel_value - kDistanceMapSliceUnknownValueCert) < kEps) {
     return;
   }
 
@@ -299,6 +304,12 @@ void CertifiedEsdfSliceConverter::sliceImageToPointcloud(
     float z_slice_level, float voxel_size,
     sensor_msgs::msg::PointCloud2* pointcloud_msg) {
   CHECK_NOTNULL(pointcloud_msg);
+  // LOG(INFO) << "Slice image to pointcloud";
+  // LOG(INFO) << "Slice image size: " << map_slice_image.rows() << " x "
+  //           << map_slice_image.cols();
+  // LOG(INFO) << "Slice image numel: " << map_slice_image.numel();
+  // LOG(INFO) << "z_slice_level: " << z_slice_level;
+  // LOG(INFO) << "voxel_size: " << voxel_size;
 
   // Allocate max space we could take up
   pcl_pointcloud_device_.reserve(map_slice_image.numel());

@@ -63,6 +63,7 @@ NvbloxNode::NvbloxNode(const rclcpp::NodeOptions& options,
   mapper_ = std::make_shared<Mapper>(voxel_size_, MemoryType::kDevice,
                                      static_projective_layer_type_);
   initializeMapper(mapper_name, mapper_.get(), this);
+  mapper_->certified_mapping_enabled = use_certified_tsdf_;
 
   // mark initial free area
   if (mark_free_sphere_radius_ > 0) {
@@ -496,6 +497,10 @@ void NvbloxNode::processEsdf() {
     return;
   }
 
+  LOG(INFO) << "Number of ESDF allocated blocks: " << mapper_->esdf_layer().numAllocatedBlocks();
+  int cert_esdf_blocks = mapper_->certified_esdf_layer().numAllocatedBlocks();
+  LOG(INFO) << "Number of Certified ESDF allocated blocks: " << cert_esdf_blocks;
+
   timing::Timer esdf_output_timer("ros/esdf/output");
 
   // If anyone wants a slice
@@ -537,15 +542,19 @@ void NvbloxNode::processEsdf() {
 
     // Slice certified ESDF pointcloud for RVIZ
     if (use_certified_tsdf_ &&
+        cert_esdf_blocks > 0 &&
         certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) {
+      // LOG(INFO) << "Publishing certified ESDF pointcloud";
+      Image<float> cert_map_slice_image;
       certified_esdf_slice_converter_.distanceMapSliceImageFromLayer(
-          mapper_->certified_esdf_layer(), esdf_slice_height_, &map_slice_image,
+          mapper_->certified_esdf_layer(), esdf_slice_height_, &cert_map_slice_image,
           &aabb);
+      // LOG(INFO) << "Got certified ESDF slice image";
       timing::Timer certified_esdf_output_pointcloud_timer(
           "ros/certified_esdf/output/pointcloud");
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
       certified_esdf_slice_converter_.sliceImageToPointcloud(
-          map_slice_image, aabb, esdf_slice_height_,
+          cert_map_slice_image, aabb, esdf_slice_height_,
           mapper_->certified_esdf_layer().voxel_size(), &pointcloud_msg);
       pointcloud_msg.header.frame_id = global_frame_;
       pointcloud_msg.header.stamp = get_clock()->now();
@@ -786,6 +795,7 @@ bool NvbloxNode::processPoseCov(
         pose_cov) {
   // Don't bother processing pose with error if certified mapping is not enbaled.
   // There are no other consumers.
+  timing::Timer certified_tsdf_integration_timer("ros/certified_tsdf/deflate");
   if (mapper_->certified_mapping_enabled) {
     // Extract actiual pose (not PoseWithCovariance). This is T_G_P (global to
     // pose). When T_P_S (pose to sensor) is identity, and the layer frame is the
@@ -797,7 +807,11 @@ bool NvbloxNode::processPoseCov(
     // message type.
     float eps_R = pose_cov->pose.covariance[0];
     float eps_t = pose_cov->pose.covariance[1];
+    // eps_R += 0.0001;  // TODO(rgg): remove this, for testing only!!
+    // eps_t += 0.0001;  // TODO(rgg): remove this, for testing only!!
     // Deflate the mapper's certified TSDF with the new pose and error information
+    LOG(INFO) << "Deflating certified TSDF with eps_R: " << eps_R
+              << " and eps_t: " << eps_t << ".";
     mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
   }
   return true;
