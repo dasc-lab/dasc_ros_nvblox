@@ -23,7 +23,6 @@
 #include <nvblox_msgs/msg/distance_map_slice.hpp>
 
 #include "nvblox_ros/conversions/pointcloud_conversions.hpp"
-#include "nvblox_ros/conversions/esdf_slice_conversions.hpp"  // For constant
 
 namespace nvblox
 {
