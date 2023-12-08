@@ -154,6 +154,11 @@ bool depthImageFromImageMessage(
       for (int i = 0; i < numel; i++) {
         float_depth_buffer[i] =
             static_cast<float>(char_depth_buffer[i]) / 1000.0f;
+        // TODO(rgg): remove this. This is a hack to 
+        // test whether we can "repair" holes in the depth image.
+        if (float_depth_buffer[i] == 0.0f) {
+          float_depth_buffer[i] = 10.0f;
+        }
       }
       depth_image->populateFromBuffer(image_msg->height, image_msg->width,
                                       float_depth_buffer.data(),
