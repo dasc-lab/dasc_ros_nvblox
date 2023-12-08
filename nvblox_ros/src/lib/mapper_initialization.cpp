@@ -109,6 +109,7 @@ void initializeMapper(
     mapper_name, "projective_integrator_max_integration_distance_m",
     [&](auto value) {
       mapper_ptr->tsdf_integrator().max_integration_distance_m(value);
+      mapper_ptr->certified_tsdf_integrator().max_integration_distance_m(value);
       mapper_ptr->occupancy_integrator().max_integration_distance_m(value);
     },
     node);
@@ -124,6 +125,7 @@ void initializeMapper(
     mapper_name, "projective_integrator_truncation_distance_vox",
     [&](auto value) {
       mapper_ptr->tsdf_integrator().truncation_distance_vox(value);
+      mapper_ptr->certified_tsdf_integrator().truncation_distance_vox(value);
       mapper_ptr->occupancy_integrator().truncation_distance_vox(value);
       mapper_ptr->lidar_tsdf_integrator().truncation_distance_vox(value);
       mapper_ptr->lidar_occupancy_integrator().truncation_distance_vox(value);
@@ -139,6 +141,8 @@ void initializeMapper(
       const WeightingFunctionType weight_mode =
       weighting_function_type_from_string(value, node);
       mapper_ptr->tsdf_integrator().weighting_function_type(weight_mode);
+      mapper_ptr->certified_tsdf_integrator().weighting_function_type(
+          weight_mode);
       mapper_ptr->color_integrator().weighting_function_type(weight_mode);
     },
     node);
@@ -148,6 +152,7 @@ void initializeMapper(
     mapper_name, "tsdf_integrator_max_weight",
     [&](auto value) {
       mapper_ptr->tsdf_integrator().max_weight(value);
+      mapper_ptr->certified_tsdf_integrator().max_weight(value);
       mapper_ptr->lidar_tsdf_integrator().max_weight(value);
     },
     node);
@@ -225,19 +230,26 @@ void initializeMapper(
 
   // esdf integrator
   set_mapper_parameter<float>(
-    mapper_name, "esdf_integrator_min_weight",
-    [&](auto value) {mapper_ptr->esdf_integrator().min_weight(value);},
-    node);
+      mapper_name, "esdf_integrator_min_weight",
+      [&](auto value) {
+        mapper_ptr->esdf_integrator().min_weight(value);
+        mapper_ptr->certified_esdf_integrator().min_weight(value);
+      },
+      node);
   set_mapper_parameter<float>(
     mapper_name, "esdf_integrator_max_site_distance_vox",
     [&](auto value) {
       mapper_ptr->esdf_integrator().max_site_distance_vox(value);
+      mapper_ptr->certified_esdf_integrator().max_site_distance_vox(value);
     },
     node);
   set_mapper_parameter<float>(
-    mapper_name, "esdf_integrator_max_distance_m",
-    [&](auto value) {mapper_ptr->esdf_integrator().max_distance_m(value);},
-    node);
+      mapper_name, "esdf_integrator_max_distance_m",
+      [&](auto value) {
+        mapper_ptr->esdf_integrator().max_distance_m(value);
+        mapper_ptr->certified_esdf_integrator().max_distance_m(value);
+      },
+      node);
 }
 
 }  // namespace nvblox

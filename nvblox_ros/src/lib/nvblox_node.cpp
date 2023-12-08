@@ -31,6 +31,7 @@
 #include <nvblox_ros_common/qos.hpp>
 
 #include "nvblox_ros/conversions/certified_esdf_slice_conversions.hpp"
+#include "nvblox_ros/conversions/certified_tsdf_slice_conversions.hpp"
 #include "nvblox_ros/visualization.hpp"
 
 // #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
@@ -283,6 +284,9 @@ void NvbloxNode::advertiseTopics() {
   certified_esdf_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>(
           "~/certified_esdf_pointcloud", 1);
+  certified_tsdf_pointcloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>(
+          "~/certified_tsdf_pointcloud", 1);
   esdfAABB_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("~/esdfAABB_pointcloud",
                                                       1);
@@ -566,6 +570,24 @@ void NvbloxNode::processEsdf() {
       pointcloud_msg.header.frame_id = global_frame_;
       pointcloud_msg.header.stamp = get_clock()->now();
       certified_esdf_pointcloud_publisher_->publish(pointcloud_msg);
+    }
+
+    // Slice certified TSDF pointcloud for RVIZ
+    if (use_certified_tsdf_ &&
+        certified_tsdf_pointcloud_publisher_->get_subscription_count() > 0) {
+      LOG(INFO) << "Publishing certified TSDF pointcloud";
+      Image<float> cert_map_slice_image;
+      certified_tsdf_slice_converter_.distanceMapSliceImageFromLayer(
+          mapper_->certified_tsdf_layer(), esdf_slice_height_,
+          &cert_map_slice_image, &aabb);
+      LOG(INFO) << "Got certified TSDF slice image";
+      sensor_msgs::msg::PointCloud2 pointcloud_msg;
+      certified_tsdf_slice_converter_.sliceImageToPointcloud(
+          cert_map_slice_image, aabb, esdf_slice_height_,
+          mapper_->certified_tsdf_layer().voxel_size(), &pointcloud_msg);
+      pointcloud_msg.header.frame_id = global_frame_;
+      pointcloud_msg.header.stamp = get_clock()->now();
+      certified_tsdf_pointcloud_publisher_->publish(pointcloud_msg);
     }
   }
 
