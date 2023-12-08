@@ -39,6 +39,8 @@
 
 namespace nvblox {
 
+using conversions::TsdfSliceType;
+
 NvbloxNode::NvbloxNode(const rclcpp::NodeOptions& options,
                        const std::string& node_name)
     : Node(node_name, options), transformer_(this) {
@@ -188,7 +190,7 @@ void NvbloxNode::getParameters() {
       declare_parameter<int>("maximum_sensor_message_queue_length",
                              maximum_sensor_message_queue_length_);
 
-  // Settings for QoS.
+  // Settings for QoSr
   depth_qos_str_ = declare_parameter<std::string>("depth_qos", depth_qos_str_);
   color_qos_str_ = declare_parameter<std::string>("color_qos", color_qos_str_);
 
@@ -284,9 +286,19 @@ void NvbloxNode::advertiseTopics() {
   certified_esdf_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>(
           "~/certified_esdf_pointcloud", 1);
-  certified_tsdf_pointcloud_publisher_ =
+  // Initialize all publishers for the certified tsdf
+  certified_tsdf_cert_distance_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>(
-          "~/certified_tsdf_pointcloud", 1);
+          "~/certified_tsdf_cert_distance_pointcloud", 1);
+  certified_tsdf_est_distance_pointcloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>(
+          "~/certified_tsdf_est_distance_pointcloud", 1);
+  certified_tsdf_correction_pointcloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>(
+          "~/certified_tsdf_correction_pointcloud", 1);
+  certified_tsdf_weight_pointcloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>(
+          "~/certified_tsdf_weight_pointcloud", 1);
   esdfAABB_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>("~/esdfAABB_pointcloud",
                                                       1);
@@ -519,7 +531,11 @@ void NvbloxNode::processEsdf() {
   if (esdf_distance_slice_ &&
       (esdf_pointcloud_publisher_->get_subscription_count() > 0 ||
        map_slice_publisher_->get_subscription_count() > 0 ||
-       certified_esdf_pointcloud_publisher_->get_subscription_count() > 0)) {
+       certified_esdf_pointcloud_publisher_->get_subscription_count() > 0
+       || certified_tsdf_cert_distance_pointcloud_publisher_->get_subscription_count() > 0
+       || certified_tsdf_est_distance_pointcloud_publisher_->get_subscription_count() > 0
+       || certified_tsdf_correction_pointcloud_publisher_->get_subscription_count() > 0
+       || certified_tsdf_weight_pointcloud_publisher_->get_subscription_count() > 0)) {
     // Get the slice as an image
     timing::Timer esdf_slice_compute_timer("ros/esdf/output/compute");
     AxisAlignedBoundingBox aabb;
@@ -573,21 +589,39 @@ void NvbloxNode::processEsdf() {
     }
 
     // Slice certified TSDF pointcloud for RVIZ
-    if (use_certified_tsdf_ &&
-        certified_tsdf_pointcloud_publisher_->get_subscription_count() > 0) {
-      LOG(INFO) << "Publishing certified TSDF pointcloud";
-      Image<float> cert_map_slice_image;
-      certified_tsdf_slice_converter_.distanceMapSliceImageFromLayer(
-          mapper_->certified_tsdf_layer(), esdf_slice_height_,
-          &cert_map_slice_image, &aabb);
-      LOG(INFO) << "Got certified TSDF slice image";
-      sensor_msgs::msg::PointCloud2 pointcloud_msg;
-      certified_tsdf_slice_converter_.sliceImageToPointcloud(
-          cert_map_slice_image, aabb, esdf_slice_height_,
-          mapper_->certified_tsdf_layer().voxel_size(), &pointcloud_msg);
-      pointcloud_msg.header.frame_id = global_frame_;
-      pointcloud_msg.header.stamp = get_clock()->now();
-      certified_tsdf_pointcloud_publisher_->publish(pointcloud_msg);
+    // Make a list of publishers to loop over
+    std::vector<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr>
+        certified_tsdf_pointcloud_publishers{
+            certified_tsdf_cert_distance_pointcloud_publisher_,
+            certified_tsdf_est_distance_pointcloud_publisher_,
+            certified_tsdf_correction_pointcloud_publisher_,
+            certified_tsdf_weight_pointcloud_publisher_,
+        };
+    // Create corresponding list of slice types
+    std::vector<TsdfSliceType> slice_types{
+        TsdfSliceType::kCertifiedDistance, TsdfSliceType::kDistance,
+        TsdfSliceType::kCorrection, TsdfSliceType::kWeight};
+    // Iterate over the publishers and slice types
+    for (size_t i = 0; i < certified_tsdf_pointcloud_publishers.size(); ++i) {
+      // Get the publisher and slice type
+      auto publisher = certified_tsdf_pointcloud_publishers[i];
+      auto slice_type = slice_types[i]; 
+      if (use_certified_tsdf_ &&
+          publisher->get_subscription_count() > 0) {
+        LOG(INFO) << "Publishing certified TSDF pointcloud";
+        Image<float> cert_map_slice_image;
+        certified_tsdf_slice_converter_.distanceMapSliceImageFromLayer(
+            mapper_->certified_tsdf_layer(), esdf_slice_height_,
+            &cert_map_slice_image, &aabb, slice_type);
+        LOG(INFO) << "Got certified TSDF slice image";
+        sensor_msgs::msg::PointCloud2 pointcloud_msg;
+        certified_tsdf_slice_converter_.sliceImageToPointcloud(
+            cert_map_slice_image, aabb, esdf_slice_height_,
+            mapper_->certified_tsdf_layer().voxel_size(), &pointcloud_msg);
+        pointcloud_msg.header.frame_id = global_frame_;
+        pointcloud_msg.header.stamp = get_clock()->now();
+        publisher->publish(pointcloud_msg);
+      }
     }
   }
 
@@ -842,7 +876,8 @@ bool NvbloxNode::processPoseCov(
     // RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(),
     //                             kTimeBetweenDebugMessages,
     //                             "Deflating certified TSDF with eps_R: "
-    //                                 << eps_R << " and eps_t: " << eps_t << ".");
+    //                                 << eps_R << " and eps_t: " << eps_t <<
+    //                                 ".");
     LOG(INFO) << "Deflating certified TSDF with eps_R: " << eps_R
               << " and eps_t: " << eps_t << ".";
     mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);

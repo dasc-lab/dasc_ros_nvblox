@@ -27,6 +27,14 @@
 namespace nvblox {
 namespace conversions {
 
+// For choosing a visualization type.
+enum class TsdfSliceType {
+  kCertifiedDistance,
+  kDistance,
+  kCorrection,
+  kWeight
+};
+
 // Helper class to store all the buffers.
 class CertifiedTsdfSliceConverter {
  public:
@@ -44,15 +52,15 @@ class CertifiedTsdfSliceConverter {
                                   Image<float>* map_slice_image_ptr,
                                   AxisAlignedBoundingBox* aabb_ptr);
 
-  void distanceMapSliceImageFromLayer(const CertifiedTsdfLayer& layer,
-                                      float z_slice_level,
-                                      const AxisAlignedBoundingBox& aabb,
-                                      Image<float>* map_slice_image_ptr);
+  void distanceMapSliceImageFromLayer(
+      const CertifiedTsdfLayer& layer, float z_slice_level,
+      const AxisAlignedBoundingBox& aabb, Image<float>* map_slice_image_ptr,
+      TsdfSliceType slice_type = TsdfSliceType::kCertifiedDistance);
 
-  void distanceMapSliceImageFromLayer(const CertifiedTsdfLayer& layer,
-                                      float z_slice_level,
-                                      Image<float>* map_slice_image_ptr,
-                                      AxisAlignedBoundingBox* aabb_ptr);
+  void distanceMapSliceImageFromLayer(
+      const CertifiedTsdfLayer& layer, float z_slice_level,
+      Image<float>* map_slice_image_ptr, AxisAlignedBoundingBox* aabb_ptr,
+      TsdfSliceType slice_type = TsdfSliceType::kCertifiedDistance);
 
   void distanceMapSliceImageToMsg(
       const Image<float>& map_slice_image, const AxisAlignedBoundingBox& aabb,
@@ -74,7 +82,8 @@ class CertifiedTsdfSliceConverter {
   void populateSliceFromLayer(const CertifiedTsdfLayer& layer,
                               const AxisAlignedBoundingBox& aabb,
                               float z_slice_height, float resolution,
-                              float unobserved_value, Image<float>* image);
+                              float unobserved_value, Image<float>* image,
+                              TsdfSliceType slice_type);
 
   cudaStream_t cuda_stream_ = nullptr;
 

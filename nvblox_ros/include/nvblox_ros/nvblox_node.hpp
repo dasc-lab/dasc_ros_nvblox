@@ -224,7 +224,13 @@ class NvbloxNode : public rclcpp::Node {
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       certified_esdf_pointcloud_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
-      certified_tsdf_pointcloud_publisher_;
+      certified_tsdf_cert_distance_pointcloud_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      certified_tsdf_est_distance_pointcloud_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      certified_tsdf_correction_pointcloud_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      certified_tsdf_weight_pointcloud_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       esdfAABB_pointcloud_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr

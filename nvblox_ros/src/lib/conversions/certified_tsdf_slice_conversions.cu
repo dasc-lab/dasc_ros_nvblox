@@ -31,7 +31,8 @@ CertifiedTsdfSliceConverter::CertifiedTsdfSliceConverter() {
 __global__ void populateSliceFromLayerKernelCertTsdf(
     Index3DDeviceHashMapType<CertifiedTsdfBlock> block_hash,
     AxisAlignedBoundingBox aabb, float block_size, float* image, int rows,
-    int cols, float z_slice_height, float resolution, float unobserved_value) {
+    int cols, float z_slice_height, float resolution, float unobserved_value,
+    TsdfSliceType slice_type) {
   const float voxel_size = block_size / CertifiedTsdfBlock::kVoxelsPerSide;
   const int pixel_col = blockIdx.x * blockDim.x + threadIdx.x;
   const int pixel_row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -71,17 +72,27 @@ __global__ void populateSliceFromLayerKernelCertTsdf(
   //   }
   // }
 
-  // float distance = voxel->distance + voxel->correction; // "estimated
-  // distance" float distance = voxel->distance; // "certified distance"
-  float distance = voxel->correction;  // "correction"
-
-  image::access(pixel_row, pixel_col, cols, image) = distance;
+  // Based on the slice type, set the value to display
+  float value{0.0f};
+  if (slice_type == TsdfSliceType::kWeight) {
+    value = voxel->weight;
+  } else if (slice_type == TsdfSliceType::kCorrection) {
+    value = voxel->correction;
+  } else if (slice_type == TsdfSliceType::kDistance) {
+    // Default to distance.
+    // certified distance + correction = (observed) distance
+    value = voxel->distance + voxel->correction;
+  } else if (slice_type == TsdfSliceType::kCertifiedDistance) {
+    // Default to certified distance as it is what's used by the ESDF
+    value = voxel->distance;
+  }
+  image::access(pixel_row, pixel_col, cols, image) = value;
 }
 
 void CertifiedTsdfSliceConverter::populateSliceFromLayer(
     const CertifiedTsdfLayer& layer, const AxisAlignedBoundingBox& aabb,
     float z_slice_height, float resolution, float unobserved_value,
-    Image<float>* image) {
+    Image<float>* image, TsdfSliceType slice_type) {
   CHECK(image->memory_type() == MemoryType::kDevice ||
         image->memory_type() == MemoryType::kUnified)
       << "Output needs to be accessible on device";
@@ -107,19 +118,19 @@ void CertifiedTsdfSliceConverter::populateSliceFromLayer(
       std::ceil(image->cols() / static_cast<float>(kThreadDim)));
   dim3 block_dim(rounded_cols, rounded_rows);
   dim3 thread_dim(kThreadDim, kThreadDim);
-
   populateSliceFromLayerKernelCertTsdf<<<block_dim, thread_dim, 0,
                                          cuda_stream_>>>(
       gpu_layer_view.getHash().impl_, aabb, layer.block_size(),
       image->dataPtr(), image->rows(), image->cols(), z_slice_height,
-      resolution, unobserved_value);
+      resolution, unobserved_value, slice_type);
   checkCudaErrors(cudaStreamSynchronize(cuda_stream_));
   checkCudaErrors(cudaPeekAtLastError());
 }
 
 void CertifiedTsdfSliceConverter::distanceMapSliceImageFromLayer(
     const CertifiedTsdfLayer& layer, float z_slice_level,
-    const AxisAlignedBoundingBox& aabb, Image<float>* map_slice_image_ptr) {
+    const AxisAlignedBoundingBox& aabb, Image<float>* map_slice_image_ptr,
+    TsdfSliceType slice_type) {
   CHECK_NOTNULL(map_slice_image_ptr);
 
   const float voxel_size =
@@ -137,12 +148,13 @@ void CertifiedTsdfSliceConverter::distanceMapSliceImageFromLayer(
   // Fill in the float image.
   populateSliceFromLayer(layer, aabb, z_slice_level, voxel_size,
                          kDistanceMapSliceUnknownValueCertTsdf,
-                         map_slice_image_ptr);
+                         map_slice_image_ptr, slice_type);
 }
 
 void CertifiedTsdfSliceConverter::distanceMapSliceImageFromLayer(
     const CertifiedTsdfLayer& layer, float z_slice_level,
-    Image<float>* map_slice_image_ptr, AxisAlignedBoundingBox* aabb_ptr) {
+    Image<float>* map_slice_image_ptr, AxisAlignedBoundingBox* aabb_ptr,
+    TsdfSliceType slice_type) {
   CHECK_NOTNULL(map_slice_image_ptr);
   CHECK_NOTNULL(aabb_ptr);
   // Calls the AABB version of this function but first calculates the aabb
@@ -154,7 +166,7 @@ void CertifiedTsdfSliceConverter::distanceMapSliceImageFromLayer(
 
   // Get the slice image
   distanceMapSliceImageFromLayer(layer, z_slice_level, *aabb_ptr,
-                                 map_slice_image_ptr);
+                                 map_slice_image_ptr, slice_type);
 }
 
 void CertifiedTsdfSliceConverter::distanceMapSliceImageToMsg(
