@@ -156,6 +156,18 @@ bool depthImageFromImageMessage(
             static_cast<float>(char_depth_buffer[i]) / 1000.0f;
         // TODO(rgg): remove this. This is a hack to 
         // test whether we can "repair" holes in the depth image.
+        // Nonexistent returns in the center of the image are set to 10.0f.
+        // The sidebars should be left alone.
+        // Image is row-major; access is row*cols + col
+        constexpr float side_buffer_to_ignore = 0.1f;
+        if (i % image_msg->width < side_buffer_to_ignore * image_msg->width ||
+            i % image_msg->width >
+                (1.0f - side_buffer_to_ignore) * image_msg->width ||
+            i / image_msg->width < side_buffer_to_ignore * image_msg->height ||
+            i / image_msg->width >
+                (1.0f - side_buffer_to_ignore) * image_msg->height) {
+          continue;
+        }
         if (float_depth_buffer[i] == 0.0f) {
           float_depth_buffer[i] = 10.0f;
         }
