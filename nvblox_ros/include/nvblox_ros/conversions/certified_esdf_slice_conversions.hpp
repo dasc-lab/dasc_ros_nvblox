@@ -47,6 +47,12 @@ public:
     Image<float> * map_slice_image_ptr,
     AxisAlignedBoundingBox * aabb_ptr);
 
+void distanceMapSliceDiffBetweenLayers(
+    const CertifiedEsdfLayer & layer_1,
+    const CertifiedEsdfLayer & layer_2, float z_slice_level,
+    Image<float> * map_slice_image_ptr,
+    AxisAlignedBoundingBox * aabb_ptr);
+
   void distanceMapSliceImageFromLayer(
     const CertifiedEsdfLayer & layer,
     float z_slice_level,

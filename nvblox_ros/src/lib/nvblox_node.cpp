@@ -20,6 +20,7 @@
 #include <nvblox/io/mesh_io.h>
 #include <nvblox/io/pointcloud_io.h>
 #include <nvblox/utils/timing.h>
+#include <nvblox/sensors/image.h>
 
 #include <limits>
 #include <memory>
@@ -286,6 +287,9 @@ void NvbloxNode::advertiseTopics() {
   certified_esdf_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>(
           "~/certified_esdf_pointcloud", 1);
+  certified_esdf_diff_pointcloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>(
+          "~/certified_esdf_diff_pointcloud", 1);
   // Initialize all publishers for the certified tsdf
   certified_tsdf_cert_distance_pointcloud_publisher_ =
       create_publisher<sensor_msgs::msg::PointCloud2>(
@@ -545,7 +549,10 @@ void NvbloxNode::processEsdf() {
     esdf_slice_compute_timer.Stop();
 
     // Slice pointcloud for RVIZ
-    if (esdf_pointcloud_publisher_->get_subscription_count() > 0) {
+    // Need the image for the diff too, so even if no one wants the regular ESDF
+    // pointcloud we need to compute the image.
+    if (esdf_pointcloud_publisher_->get_subscription_count() > 0
+    || certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) {
       timing::Timer esdf_output_pointcloud_timer("ros/esdf/output/pointcloud");
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
       esdf_slice_converter_.sliceImageToPointcloud(
@@ -556,21 +563,10 @@ void NvbloxNode::processEsdf() {
       esdf_pointcloud_publisher_->publish(pointcloud_msg);
     }
 
-    // Also publish the map slice (costmap for nav2).
-    if (map_slice_publisher_->get_subscription_count() > 0) {
-      timing::Timer esdf_output_human_slice_timer("ros/esdf/output/slice");
-      nvblox_msgs::msg::DistanceMapSlice map_slice_msg;
-      esdf_slice_converter_.distanceMapSliceImageToMsg(
-          map_slice_image, aabb, esdf_slice_height_, mapper_->voxel_size_m(),
-          &map_slice_msg);
-      map_slice_msg.header.frame_id = global_frame_;
-      map_slice_msg.header.stamp = get_clock()->now();
-      map_slice_publisher_->publish(map_slice_msg);
-    }
-
     // Slice certified ESDF pointcloud for RVIZ
     if (use_certified_tsdf_ && cert_esdf_blocks > 0 &&
-        certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) {
+        (certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) ||
+        (certified_esdf_diff_pointcloud_publisher_->get_subscription_count() > 0)) {
       // LOG(INFO) << "Publishing certified ESDF pointcloud";
       Image<float> cert_map_slice_image;
       certified_esdf_slice_converter_.distanceMapSliceImageFromLayer(
@@ -586,6 +582,32 @@ void NvbloxNode::processEsdf() {
       pointcloud_msg.header.frame_id = global_frame_;
       pointcloud_msg.header.stamp = get_clock()->now();
       certified_esdf_pointcloud_publisher_->publish(pointcloud_msg);
+      
+      // Subtract non-certified ESDF from certified ESDF to show conservativism
+      // Cert distance should be <= non-cert distance
+      // Therefore diff should be <= 0
+      sensor_msgs::msg::PointCloud2 diff_pointcloud_msg;
+      LOG(INFO) << "Diffing slice image";
+      image::elementWiseDiffInPlaceGPU(cert_map_slice_image, &map_slice_image);
+      certified_esdf_slice_converter_.sliceImageToPointcloud(
+          map_slice_image, aabb, esdf_slice_height_,
+          mapper_->certified_esdf_layer().voxel_size(), &diff_pointcloud_msg);
+      LOG(INFO) << "Got certified ESDF diff slice image";
+      diff_pointcloud_msg.header.frame_id = global_frame_;
+      diff_pointcloud_msg.header.stamp = get_clock()->now();
+      certified_esdf_diff_pointcloud_publisher_->publish(diff_pointcloud_msg);
+    }
+
+    // Also publish the map slice (costmap for nav2).
+    if (map_slice_publisher_->get_subscription_count() > 0) {
+      timing::Timer esdf_output_human_slice_timer("ros/esdf/output/slice");
+      nvblox_msgs::msg::DistanceMapSlice map_slice_msg;
+      esdf_slice_converter_.distanceMapSliceImageToMsg(
+          map_slice_image, aabb, esdf_slice_height_, mapper_->voxel_size_m(),
+          &map_slice_msg);
+      map_slice_msg.header.frame_id = global_frame_;
+      map_slice_msg.header.stamp = get_clock()->now();
+      map_slice_publisher_->publish(map_slice_msg);
     }
 
     // Slice certified TSDF pointcloud for RVIZ
@@ -1096,6 +1118,10 @@ void NvbloxNode::savePly(
                               request->file_path + "/ros2_tsdf.ply");
     io::outputVoxelLayerToPly(mapper_->esdf_layer(),
                               request->file_path + "/ros2_esdf.ply");
+    io::outputVoxelLayerToPly(mapper_->certified_esdf_layer(),
+                              request->file_path + "/ros2_certified_esdf.ply");
+    io::outputVoxelLayerToPly(mapper_->certified_tsdf_layer(),
+                              request->file_path + "/ros2_certified_tsdf.ply");
     success = io::outputMeshLayerToPly(mapper_->mesh_layer(),
                                        request->file_path + "/ros2_mesh.ply");
   }
