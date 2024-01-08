@@ -151,6 +151,13 @@ bool depthImageFromImageMessage(
                         depth_image->dataPtr(), DivideBy1000());
     } else {
       std::vector<float> float_depth_buffer(numel);
+        
+      constexpr float side_buffer_to_ignore_width = 0.05f;
+      constexpr float side_buffer_to_ignore_height = 0.01f;
+
+      int width_to_ignore = int(side_buffer_to_ignore_width * float(image_msg -> width) );
+      int height_to_ignore = int(side_buffer_to_ignore_height * float(image_msg -> height) );
+
       for (int i = 0; i < numel; i++) {
         float_depth_buffer[i] =
             static_cast<float>(char_depth_buffer[i]) / 1000.0f;
@@ -159,15 +166,22 @@ bool depthImageFromImageMessage(
         // Nonexistent returns in the center of the image are set to 10.0f.
         // The sidebars should be left alone.
         // Image is row-major; access is row*cols + col
-        constexpr float side_buffer_to_ignore = 0.1f;
-        if (i % image_msg->width < side_buffer_to_ignore * image_msg->width ||
-            i % image_msg->width >
-                (1.0f - side_buffer_to_ignore) * image_msg->width ||
-            i / image_msg->width < side_buffer_to_ignore * image_msg->height ||
-            i / image_msg->width >
-                (1.0f - side_buffer_to_ignore) * image_msg->height) {
-          continue;
-        }
+	int col = i % image_msg->width;
+	int row = i / image_msg->width;
+
+	if ((col < width_to_ignore) || (col > (image_msg->width - width_to_ignore)) || (row < height_to_ignore) || (row > (image_msg->height - height_to_ignore)) )
+	{
+	continue;
+	}	
+
+        // if (i % image_msg->width < side_buffer_to_ignore_width * image_msg->width ||
+        //     i % image_msg->width >
+        //         (1.0f - side_buffer_to_ignore_width) * image_msg->width ||
+        //     i / image_msg->width < side_buffer_to_ignore * image_msg->height ||
+        //     i / image_msg->width >
+        //         (1.0f - side_buffer_to_ignore) * image_msg->height) {
+        //   continue;
+        // }
         if (float_depth_buffer[i] == 0.0f) {
           float_depth_buffer[i] = 10.0f;
         }
