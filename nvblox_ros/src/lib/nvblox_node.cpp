@@ -304,6 +304,8 @@ void NvbloxNode::advertiseTopics() {
                                                       1);
   map_slice_publisher_ =
       create_publisher<nvblox_msgs::msg::DistanceMapSlice>("~/map_slice", 1);
+  certified_map_slice_publisher_ =
+      create_publisher<nvblox_msgs::msg::DistanceMapSlice>("~/certified_map_slice", 1);
   mesh_marker_publisher_ =
       create_publisher<visualization_msgs::msg::MarkerArray>("~/mesh_marker",
                                                              1);
@@ -529,13 +531,16 @@ void NvbloxNode::processEsdf() {
 
   // If anyone wants a slice
   if (esdf_distance_slice_ &&
-      (esdf_pointcloud_publisher_->get_subscription_count() > 0 ||
-       map_slice_publisher_->get_subscription_count() > 0 ||
-       certified_esdf_pointcloud_publisher_->get_subscription_count() > 0
+      (esdf_pointcloud_publisher_->get_subscription_count() > 0 
+       || map_slice_publisher_->get_subscription_count() > 0 
+       || certified_map_slice_publisher_->get_subscription_count() > 0
+       || certified_esdf_pointcloud_publisher_->get_subscription_count() > 0
        || certified_tsdf_cert_distance_pointcloud_publisher_->get_subscription_count() > 0
        || certified_tsdf_est_distance_pointcloud_publisher_->get_subscription_count() > 0
        || certified_tsdf_correction_pointcloud_publisher_->get_subscription_count() > 0
-       || certified_tsdf_weight_pointcloud_publisher_->get_subscription_count() > 0)) {
+       || certified_tsdf_weight_pointcloud_publisher_->get_subscription_count() > 0
+       )
+      ) {
     // Get the slice as an image
     timing::Timer esdf_slice_compute_timer("ros/esdf/output/compute");
     AxisAlignedBoundingBox aabb;
@@ -543,6 +548,11 @@ void NvbloxNode::processEsdf() {
     esdf_slice_converter_.distanceMapSliceImageFromLayer(
         mapper_->esdf_layer(), esdf_slice_height_, &map_slice_image, &aabb);
     esdf_slice_compute_timer.Stop();
+    
+    LOG(INFO) << "Creating certified distance map slice";
+    Image<float> certified_map_slice_image;
+    certified_esdf_slice_converter_.distanceMapSliceImageFromLayer(
+        mapper_->certified_esdf_layer(), esdf_slice_height_, &certified_map_slice_image, &aabb);
 
     // Slice pointcloud for RVIZ
     if (esdf_pointcloud_publisher_->get_subscription_count() > 0) {
@@ -567,21 +577,29 @@ void NvbloxNode::processEsdf() {
       map_slice_msg.header.stamp = get_clock()->now();
       map_slice_publisher_->publish(map_slice_msg);
     }
+    
+    // Also publish the certified map slice (costmap for nav2).
+    if (certified_map_slice_publisher_->get_subscription_count() > 0) {
+      timing::Timer esdf_output_human_slice_timer("ros/certified_esdf/output/slice");
+      nvblox_msgs::msg::DistanceMapSlice map_slice_msg;
+      certified_esdf_slice_converter_.distanceMapSliceImageToMsg(
+          map_slice_image, aabb, esdf_slice_height_, mapper_->voxel_size_m(),
+          &map_slice_msg);
+      map_slice_msg.header.frame_id = global_frame_;
+      map_slice_msg.header.stamp = get_clock()->now();
+      LOG(INFO) << "Publishing certified distance map slice";
+      certified_map_slice_publisher_->publish(map_slice_msg);
+    }
 
     // Slice certified ESDF pointcloud for RVIZ
     if (use_certified_tsdf_ && cert_esdf_blocks > 0 &&
         certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) {
       // LOG(INFO) << "Publishing certified ESDF pointcloud";
-      Image<float> cert_map_slice_image;
-      certified_esdf_slice_converter_.distanceMapSliceImageFromLayer(
-          mapper_->certified_esdf_layer(), esdf_slice_height_,
-          &cert_map_slice_image, &aabb);
-      // LOG(INFO) << "Got certified ESDF slice image";
       timing::Timer certified_esdf_output_pointcloud_timer(
           "ros/certified_esdf/output/pointcloud");
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
       certified_esdf_slice_converter_.sliceImageToPointcloud(
-          cert_map_slice_image, aabb, esdf_slice_height_,
+          certified_map_slice_image, aabb, esdf_slice_height_,
           mapper_->certified_esdf_layer().voxel_size(), &pointcloud_msg);
       pointcloud_msg.header.frame_id = global_frame_;
       pointcloud_msg.header.stamp = get_clock()->now();

@@ -237,6 +237,8 @@ class NvbloxNode : public rclcpp::Node {
       occupancy_publisher_;
   rclcpp::Publisher<nvblox_msgs::msg::DistanceMapSlice>::SharedPtr
       map_slice_publisher_;
+  rclcpp::Publisher<nvblox_msgs::msg::DistanceMapSlice>::SharedPtr
+      certified_map_slice_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr
       slice_bounds_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
