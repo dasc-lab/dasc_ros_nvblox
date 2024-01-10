@@ -101,6 +101,11 @@ class NvbloxNode : public rclcpp::Node {
   void loadMap(
       const std::shared_ptr<nvblox_msgs::srv::FilePath::Request> request,
       std::shared_ptr<nvblox_msgs::srv::FilePath::Response> response);
+  void savePlyWithRotation(
+      const std::shared_ptr<nvblox_msgs::srv::FilePath::Request> request,
+      std::shared_ptr<nvblox_msgs::srv::FilePath::Response> response);
+
+  bool outputRototranslationToFile(const std::string& filename);
 
   // Does whatever processing there is to be done, depending on what
   // transforms are available.
@@ -248,6 +253,8 @@ class NvbloxNode : public rclcpp::Node {
 
   // Services.
   rclcpp::Service<nvblox_msgs::srv::FilePath>::SharedPtr save_ply_service_;
+  rclcpp::Service<nvblox_msgs::srv::FilePath>::SharedPtr
+      save_ply_with_rotation_service_;
   rclcpp::Service<nvblox_msgs::srv::FilePath>::SharedPtr save_map_service_;
   rclcpp::Service<nvblox_msgs::srv::FilePath>::SharedPtr load_map_service_;
 
