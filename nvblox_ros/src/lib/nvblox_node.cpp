@@ -524,13 +524,7 @@ void NvbloxNode::processEsdf() {
     return;
   }
 
-  LOG(INFO) << "ProcessEsdf: Certified mapping enabled: "
-            << mapper_->certified_mapping_enabled;
-  LOG(INFO) << "Number of ESDF allocated blocks: "
-            << mapper_->esdf_layer().numAllocatedBlocks();
   int cert_esdf_blocks = mapper_->certified_esdf_layer().numAllocatedBlocks();
-  LOG(INFO) << "Number of Certified ESDF allocated blocks: "
-            << cert_esdf_blocks;
 
   timing::Timer esdf_output_timer("ros/esdf/output");
 
@@ -553,8 +547,8 @@ void NvbloxNode::processEsdf() {
     esdf_slice_converter_.distanceMapSliceImageFromLayer(
         mapper_->esdf_layer(), esdf_slice_height_, &map_slice_image, &aabb);
     esdf_slice_compute_timer.Stop();
-    
-    LOG(INFO) << "Creating certified distance map slice";
+
+    // LOG(INFO) << "Creating certified distance map slice";
     Image<float> certified_map_slice_image;
     certified_esdf_slice_converter_.distanceMapSliceImageFromLayer(
         mapper_->certified_esdf_layer(), esdf_slice_height_, &certified_map_slice_image, &aabb);
@@ -592,7 +586,7 @@ void NvbloxNode::processEsdf() {
           &map_slice_msg);
       map_slice_msg.header.frame_id = global_frame_;
       map_slice_msg.header.stamp = get_clock()->now();
-      LOG(INFO) << "Publishing certified distance map slice";
+      // LOG(INFO) << "Publishing certified distance map slice";
       certified_map_slice_publisher_->publish(map_slice_msg);
     }
 
@@ -631,12 +625,10 @@ void NvbloxNode::processEsdf() {
       auto slice_type = slice_types[i]; 
       if (use_certified_tsdf_ &&
           publisher->get_subscription_count() > 0) {
-        LOG(INFO) << "Publishing certified TSDF pointcloud";
         Image<float> cert_map_slice_image;
         certified_tsdf_slice_converter_.distanceMapSliceImageFromLayer(
             mapper_->certified_tsdf_layer(), esdf_slice_height_,
             &cert_map_slice_image, &aabb, slice_type);
-        LOG(INFO) << "Got certified TSDF slice image";
         sensor_msgs::msg::PointCloud2 pointcloud_msg;
         certified_tsdf_slice_converter_.sliceImageToPointcloud(
             cert_map_slice_image, aabb, esdf_slice_height_,
@@ -895,15 +887,14 @@ bool NvbloxNode::processPoseCov(
     float eps_t = pose_cov->pose.covariance[1];
     // Deflate the mapper's certified TSDF with the new pose and error
     // information
-    // constexpr float kTimeBetweenDebugMessages = 1000.0;
-    // RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(),
-    //                             kTimeBetweenDebugMessages,
-    //                             "Deflating certified TSDF with eps_R: "
-    //                                 << eps_R << " and eps_t: " << eps_t <<
-    //                                 ".");
     if (eps_R > 0 || eps_t > 0) {
-      LOG(INFO) << "Deflating certified TSDF with eps_R: " << eps_R
-                << " and eps_t: " << eps_t << ".";
+      constexpr float kTimeBetweenDebugMessages = 1000.0;
+      RCLCPP_INFO_STREAM_THROTTLE(
+          get_logger(), *get_clock(), kTimeBetweenDebugMessages,
+          "Deflating certified TSDF with eps_R: " << eps_R << " and eps_t: "
+                                                  << eps_t << ".");
+      // LOG(INFO) << "Deflating certified TSDF with eps_R: " << eps_R
+      //           << " and eps_t: " << eps_t << ".";
       mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
     }
   }
