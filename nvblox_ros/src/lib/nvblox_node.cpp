@@ -901,9 +901,11 @@ bool NvbloxNode::processPoseCov(
     //                             "Deflating certified TSDF with eps_R: "
     //                                 << eps_R << " and eps_t: " << eps_t <<
     //                                 ".");
-    LOG(INFO) << "Deflating certified TSDF with eps_R: " << eps_R
-              << " and eps_t: " << eps_t << ".";
-    mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
+    if (eps_R > 0 || eps_t > 0) {
+      LOG(INFO) << "Deflating certified TSDF with eps_R: " << eps_R
+                << " and eps_t: " << eps_t << ".";
+      mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
+    }
   }
   return true;
 }
