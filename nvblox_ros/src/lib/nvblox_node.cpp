@@ -580,14 +580,14 @@ void NvbloxNode::processEsdf() {
     // Also publish the certified map slice (costmap for nav2).
     if (certified_map_slice_publisher_->get_subscription_count() > 0) {
       timing::Timer esdf_output_human_slice_timer("ros/certified_esdf/output/slice");
-      nvblox_msgs::msg::DistanceMapSlice map_slice_msg;
+      nvblox_msgs::msg::DistanceMapSlice certified_map_slice_msg;
       certified_esdf_slice_converter_.distanceMapSliceImageToMsg(
-          map_slice_image, aabb, esdf_slice_height_, mapper_->voxel_size_m(),
-          &map_slice_msg);
-      map_slice_msg.header.frame_id = global_frame_;
-      map_slice_msg.header.stamp = get_clock()->now();
+          certified_map_slice_image, aabb, esdf_slice_height_,
+          mapper_->voxel_size_m(), &certified_map_slice_msg);
+      certified_map_slice_msg.header.frame_id = global_frame_;
+      certified_map_slice_msg.header.stamp = get_clock()->now();
       // LOG(INFO) << "Publishing certified distance map slice";
-      certified_map_slice_publisher_->publish(map_slice_msg);
+      certified_map_slice_publisher_->publish(certified_map_slice_msg);
     }
 
     // Slice certified ESDF pointcloud for RVIZ

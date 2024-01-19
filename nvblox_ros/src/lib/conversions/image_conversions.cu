@@ -169,10 +169,13 @@ bool depthImageFromImageMessage(
 	int col = i % image_msg->width;
 	int row = i / image_msg->width;
 
-	if ((col < width_to_ignore) || (col > (image_msg->width - width_to_ignore)) || (row < height_to_ignore) || (row > (image_msg->height - height_to_ignore)) )
-	{
-	continue;
-	}	
+        // TODO(dev): stopped doing the cropping!
+        //  if ((col < width_to_ignore) || (col > (image_msg->width -
+        //  width_to_ignore)) || (row < height_to_ignore) || (row >
+        //  (image_msg->height - height_to_ignore)) )
+        //  {
+        //  continue;
+        //  }
 
         // if (i % image_msg->width < side_buffer_to_ignore_width * image_msg->width ||
         //     i % image_msg->width >
@@ -183,7 +186,8 @@ bool depthImageFromImageMessage(
         //   continue;
         // }
         if (float_depth_buffer[i] == 0.0f) {
-          float_depth_buffer[i] = 10.0f;
+          // float_depth_buffer[i] = 10.0f;
+          continue;
         }
       }
       depth_image->populateFromBuffer(image_msg->height, image_msg->width,
