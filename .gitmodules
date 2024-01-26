@@ -1,4 +1,3 @@
 [submodule "nvblox"]
 	path = nvblox
-	url = https://github.com/dasc-lab/nvblox.git
-	branch = public
+	url = git@github.com:dasc-lab/nvblox.git
