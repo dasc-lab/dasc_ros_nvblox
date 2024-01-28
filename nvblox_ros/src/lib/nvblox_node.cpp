@@ -872,7 +872,7 @@ bool NvbloxNode::processPoseCov(
     const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr&
         pose_cov) {
   // Don't bother processing pose with error if certified mapping is not
-  // enbaled. There are no other consumers.
+  // enabled. There are no other consumers.
   timing::Timer certified_tsdf_integration_timer("ros/certified_tsdf/deflate");
   if (use_certified_tsdf_) {
     // Extract actual pose (not PoseWithCovariance). This is T_G_P (global to
@@ -927,6 +927,7 @@ bool NvbloxNode::processDepthImage(
 
   if (!transformer_.lookupTransformToGlobalFrame(
           target_frame, depth_img_ptr->header.stamp, &T_L_C)) {
+    RCLCPP_WARN(get_logger(), "COULD NOT GET TRANSFORM!!");
     return false;
   }
   transform_timer.Stop();
