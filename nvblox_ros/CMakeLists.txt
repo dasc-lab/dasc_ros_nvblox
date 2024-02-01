@@ -53,6 +53,8 @@ find_package(nvblox_ros_common REQUIRED)
 find_package(decomp_util REQUIRED)
 find_package(decomp_ros_msgs REQUIRED)
 find_package(pcl_ros REQUIRED)
+find_package(certified_perception_msgs REQUIRED)
+
 
 ########
 # CUDA #
@@ -97,6 +99,7 @@ ament_target_dependencies(${PROJECT_NAME}_lib
   decomp_util
   decomp_ros_msgs
   pcl_ros
+  certified_perception_msgs
 )
 target_include_directories(${PROJECT_NAME}_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

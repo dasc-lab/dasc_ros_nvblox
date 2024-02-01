@@ -34,9 +34,6 @@
 #include "nvblox_ros/conversions/certified_tsdf_slice_conversions.hpp"
 #include "nvblox_ros/visualization.hpp"
 
-// #include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
-// #include <geometry_msgs/msg/pose.hpp>
-
 namespace nvblox {
 
 using conversions::TsdfSliceType;
@@ -267,13 +264,11 @@ void NvbloxNode::subscribeToTopics() {
       std::bind(&Transformer::poseCallback, &transformer_,
                 std::placeholders::_1));
   if (use_certified_tsdf_) {
-    pose_cov_sub_ =
-        create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-            "pose_cov", 10,
-            std::bind(&NvbloxNode::poseCovCallback,
-                      this,  // TODO(rgg): make a different function name if
-                             // this causes issues.
-                      std::placeholders::_1));
+    pose_with_error_sub_ = create_subscription<
+        certified_perception_msgs::msg::PoseWithErrorStamped>(
+        "pose_with_error", 10,
+        std::bind(&NvbloxNode::poseWithErrorCallback, this,
+                  std::placeholders::_1));
   }
 }
 
@@ -361,9 +356,10 @@ void NvbloxNode::setupTimers() {
         group_processing_);
   }
   if (use_certified_tsdf_) {
-    pose_cov_processing_timer_ = create_wall_timer(
+    pose_with_error_processing_timer_ = create_wall_timer(
         std::chrono::duration<double>(1.0 / max_poll_rate_hz_),
-        std::bind(&NvbloxNode::processPoseCovQueue, this), group_processing_);
+        std::bind(&NvbloxNode::processPoseWithErrorQueue, this),
+        group_processing_);
   }
   esdf_processing_timer_ = create_wall_timer(
       std::chrono::duration<double>(1.0 / esdf_update_rate_hz_),
@@ -418,13 +414,13 @@ void NvbloxNode::pointcloudCallback(
                        &pointcloud_queue_mutex_);
 }
 
-void NvbloxNode::poseCovCallback(
-    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr
-        pose_with_cov) {
-  printMessageArrivalStatistics(*pose_with_cov,
-                                "Pose with Covariance Statistics",
-                                &pose_with_cov_frame_statistics_);
-  pushMessageOntoQueue(pose_with_cov, &pose_cov_queue_, &pose_cov_queue_mutex_);
+void NvbloxNode::poseWithErrorCallback(
+    const certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr
+        pose_with_error) {
+  printMessageArrivalStatistics(*pose_with_error, "Pose with Error Statistics",
+                                &pose_with_error_frame_statistics_);
+  pushMessageOntoQueue(pose_with_error, &pose_with_error_queue_,
+                       &pose_with_error_queue_mutex_);
 }
 
 void NvbloxNode::processDepthQueue() {
@@ -482,24 +478,23 @@ void NvbloxNode::processPointcloudQueue() {
                                          &pointcloud_queue_mutex_);
 }
 
-void NvbloxNode::processPoseCovQueue() {
-  using PoseCovMsg =
-      geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr;
+void NvbloxNode::processPoseWithErrorQueue() {
+  using PoseWithErrorMsg =
+      certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr;
   // TODO(rgg): relevant in the context of poses?
-  auto message_ready = [this](const PoseCovMsg& msg) {
+  auto message_ready = [this](const PoseWithErrorMsg& msg) {
     return this->canTransform(
         msg->header);  // Replace with return true if needed.
   };
-  processMessageQueue<PoseCovMsg>(
-      &pose_cov_queue_,        // NOLINT
-      &pose_cov_queue_mutex_,  // NOLINT
-      message_ready,           // NOLINT
-      std::bind(&NvbloxNode::processPoseCov, this, std::placeholders::_1));
+  processMessageQueue<PoseWithErrorMsg>(
+      &pose_with_error_queue_, &pose_with_error_queue_mutex_, message_ready,
+      std::bind(&NvbloxNode::processPoseWithError, this,
+                std::placeholders::_1));
   // TODO(rgg): assess impact of removing rate limit, as if it occurs it will
   // compromise theoretical safety guarantee.
-  limitQueueSizeByDeletingOldestMessages(maximum_sensor_message_queue_length_,
-                                         "pose_cov", &pose_cov_queue_,
-                                         &pose_cov_queue_mutex_);
+  limitQueueSizeByDeletingOldestMessages(
+      maximum_sensor_message_queue_length_, "pose_with_error",
+      &pose_with_error_queue_, &pose_with_error_queue_mutex_);
 }
 
 void NvbloxNode::processEsdf() {
@@ -868,23 +863,22 @@ bool NvbloxNode::isUpdateTooFrequent(const rclcpp::Time& current_stamp,
   return false;
 }
 
-bool NvbloxNode::processPoseCov(
-    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr&
-        pose_cov) {
+bool NvbloxNode::processPoseWithError(
+    const certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr&
+        pose_with_error) {
   // Don't bother processing pose with error if certified mapping is not
   // enabled. There are no other consumers.
   timing::Timer certified_tsdf_integration_timer("ros/certified_tsdf/deflate");
   if (use_certified_tsdf_) {
-    // Extract actual pose (not PoseWithCovariance). This is T_G_P (global to
+    // Extract actual pose (not PoseWithError). This is T_G_P (global to
     // pose). When T_P_S (pose to sensor) is identity, and the layer frame is
     // the global frame, T_G_P is also T_L_C (layer frame to camera).
-    geometry_msgs::msg::Pose pose = pose_cov->pose.pose;
+    geometry_msgs::msg::Pose pose = pose_with_error->pose;
     Transform T_L_C =
         transformer_.poseToEigen(pose);  // This method could be static
-    // Extract error information from covariance. This is a hack to avoid a new
-    // message type.
-    float eps_R = pose_cov->pose.covariance[0];
-    float eps_t = pose_cov->pose.covariance[1];
+    // Extract error information.
+    float eps_R = pose_with_error->rotation_error;
+    float eps_t = pose_with_error->translation_error;
     // Deflate the mapper's certified TSDF with the new pose and error
     // information
     if (eps_R > 0 || eps_t > 0) {
@@ -893,8 +887,6 @@ bool NvbloxNode::processPoseCov(
           get_logger(), *get_clock(), kTimeBetweenDebugMessages,
           "Deflating certified TSDF with eps_R: " << eps_R << " and eps_t: "
                                                   << eps_t << ".");
-      // LOG(INFO) << "Deflating certified TSDF with eps_R: " << eps_R
-      //           << " and eps_t: " << eps_t << ".";
       mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
     }
   }
