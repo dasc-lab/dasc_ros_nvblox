@@ -1,3 +1,6 @@
 [submodule "nvblox"]
 	path = nvblox
 	url = git@github.com:dasc-lab/nvblox.git
+[submodule "third_party/DecompROS2"]
+	path = third_party/DecompROS2
+	url = git@github.com:dev10110/DecompROS2.git
