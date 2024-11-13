@@ -96,10 +96,9 @@ void NvbloxNode::processMessageQueue(
   // nvblox statistics
   constexpr int kPublishPeriodMs = 10000;
   auto & clk = *get_clock();
-  RCLCPP_INFO_STREAM_THROTTLE(
-    get_logger(), clk, kPublishPeriodMs,
-    "Timing statistics: \n" <<
-      nvblox::timing::Timing::Print());
+  RCLCPP_INFO_STREAM_THROTTLE(get_logger(), clk, kPublishPeriodMs,
+                              "Timing statistics: \n"
+                                  << nvblox::timing::Timing::PrintMinimal());
 }
 
 template<typename MessageType>

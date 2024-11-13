@@ -248,6 +248,8 @@ class NvbloxNode : public rclcpp::Node {
       slice_bounds_publisher_;
   rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr
       mesh_marker_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
+      mesh_pointcloud_publisher_;
   rclcpp::Publisher<decomp_ros_msgs::msg::PolyhedronStamped>::SharedPtr
       sfc_publisher_;
 

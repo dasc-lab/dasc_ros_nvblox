@@ -226,7 +226,8 @@ void NvbloxNode::subscribeToTopics() {
   if (use_depth_) {
     // Subscribe to synchronized depth + cam_info topics
     depth_sub_.subscribe(this, "depth/image", parseQosString(depth_qos_str_));
-    depth_camera_info_sub_.subscribe(this, "depth/camera_info");
+    depth_camera_info_sub_.subscribe(this, "depth/camera_info",
+                                     parseQosString(depth_qos_str_));
     // TODO(rgg): subscribe to rototranslation error topic?
     timesync_depth_.reset(new message_filters::Synchronizer<time_policy_t>(
         time_policy_t(kQueueSize), depth_sub_, depth_camera_info_sub_));
@@ -237,7 +238,8 @@ void NvbloxNode::subscribeToTopics() {
   if (use_color_) {
     // Subscribe to synchronized color + cam_info topics
     color_sub_.subscribe(this, "color/image", parseQosString(color_qos_str_));
-    color_camera_info_sub_.subscribe(this, "color/camera_info");
+    color_camera_info_sub_.subscribe(this, "color/camera_info",
+                                     parseQosString(color_qos_str_));
 
     timesync_color_.reset(new message_filters::Synchronizer<time_policy_t>(
         time_policy_t(kQueueSize), color_sub_, color_camera_info_sub_));
@@ -304,6 +306,8 @@ void NvbloxNode::advertiseTopics() {
   mesh_marker_publisher_ =
       create_publisher<visualization_msgs::msg::MarkerArray>("~/mesh_marker",
                                                              1);
+  mesh_pointcloud_publisher_ =
+      create_publisher<sensor_msgs::msg::PointCloud2>("~/mesh_point_cloud", 1);
   slice_bounds_publisher_ = create_publisher<visualization_msgs::msg::Marker>(
       "~/map_slice_bounds", 1);
   occupancy_publisher_ =
@@ -685,7 +689,7 @@ void NvbloxNode::publishEsdf3d() {
 
       // chop off the ground
       auto aabb_min = aabb_full.min();
-      aabb_min(2) = 0.0f;
+      // aabb_min(2) = 0.0f;
       AxisAlignedBoundingBox aabb(aabb_min, aabb_full.max());
 
       using PCLPoint = pcl::PointXYZI;
@@ -838,9 +842,19 @@ void NvbloxNode::processMesh() {
   // optionally publish the markers.
   if (mesh_marker_publisher_->get_subscription_count() > 0) {
     visualization_msgs::msg::MarkerArray marker_msg;
-    conversions::markerMessageFromMeshLayer(mapper_->mesh_layer(),
-                                            global_frame_, &marker_msg);
+    bool minimal_msg = false;
+    conversions::markerMessageFromMeshLayer(
+        mapper_->mesh_layer(), global_frame_, &marker_msg, minimal_msg);
     mesh_marker_publisher_->publish(marker_msg);
+  }
+
+  // optionally publish the mesh pointcloud
+  if (mesh_pointcloud_publisher_->get_subscription_count() > 0) {
+    sensor_msgs::msg::PointCloud2 pc_msg;
+    conversions::pointcloudMessageFromMeshLayer(mapper_->mesh_layer(),
+                                                global_frame_, &pc_msg);
+
+    mesh_pointcloud_publisher_->publish(pc_msg);
   }
 
   mesh_output_timer.Stop();

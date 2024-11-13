@@ -130,47 +130,62 @@ void meshMessageFromMeshBlocks(
   }
 }
 
-void markerMessageFromMeshBlock(
-  const MeshBlock::ConstPtr & mesh_block,
-  const std::string & frame_id,
-  visualization_msgs::msg::Marker * marker)
-{
+void markerMessageFromMeshBlock(const MeshBlock::ConstPtr& mesh_block,
+                                const std::string& frame_id,
+                                visualization_msgs::msg::Marker* marker,
+                                bool minimal_msg) {
   marker->header.frame_id = frame_id;
   marker->ns = "mesh";
-  marker->scale.x = 1;
-  marker->scale.y = 1;
-  marker->scale.z = 1;
   marker->pose.orientation.x = 0;
   marker->pose.orientation.y = 0;
   marker->pose.orientation.z = 0;
   marker->pose.orientation.w = 1;
-  marker->type = visualization_msgs::msg::Marker::TRIANGLE_LIST;
+  if (minimal_msg) {
+    marker->scale.x = 0.1;
+    marker->scale.y = 0.1;
+    marker->scale.z = 0.1;
 
-  // Assumes UNWELDED mesh: all vertices in order.
-  std::vector<Vector3f> vertices = mesh_block->getVertexVectorOnCPU();
-  std::vector<Color> colors = mesh_block->getColorVectorOnCPU();
-  std::vector<int> triangles = mesh_block->getTriangleVectorOnCPU();
+    // only publish the points
+    marker->type = visualization_msgs::msg::Marker::POINTS;
+    marker->color.r = 1.0;
+    marker->color.a = 1.0;
 
-  CHECK_EQ(vertices.size(), colors.size());
-
-  marker->points.reserve(triangles.size());
-  marker->colors.reserve(triangles.size());
-
-  for (size_t i = 0; i < triangles.size(); i++) {
-    int index = triangles[i];
-    if (index >= colors.size() || index >= vertices.size()) {
-      continue;
+    std::vector<Vector3f> vertices = mesh_block->getVertexVectorOnCPU();
+    marker->points.reserve(vertices.size());
+    for (size_t i = 0; i < vertices.size(); i++) {
+      marker->points.push_back(pointMessageFromVector(vertices[i]));
     }
-    marker->points.push_back(pointMessageFromVector(vertices[index]));
-    marker->colors.push_back(colorMessageFromColor(colors[index]));
+
+  } else {
+    marker->scale.x = 1;
+    marker->scale.y = 1;
+    marker->scale.z = 1;
+    marker->type = visualization_msgs::msg::Marker::TRIANGLE_LIST;
+    // Assumes UNWELDED mesh: all vertices in order.
+    std::vector<Vector3f> vertices = mesh_block->getVertexVectorOnCPU();
+    std::vector<Color> colors = mesh_block->getColorVectorOnCPU();
+    std::vector<int> triangles = mesh_block->getTriangleVectorOnCPU();
+
+    CHECK_EQ(vertices.size(), colors.size());
+
+    marker->points.reserve(triangles.size());
+    marker->colors.reserve(triangles.size());
+
+    for (size_t i = 0; i < triangles.size(); i++) {
+      int index = triangles[i];
+      if (index >= colors.size() || index >= vertices.size()) {
+        continue;
+      }
+      marker->points.push_back(pointMessageFromVector(vertices[index]));
+      marker->colors.push_back(colorMessageFromColor(colors[index]));
+    }
   }
 }
 
 // Convert a mesh to a marker array.
 void markerMessageFromMeshLayer(
-  const BlockLayer<MeshBlock> & mesh_layer, const std::string & frame_id,
-  visualization_msgs::msg::MarkerArray * marker_msg)
-{
+    const BlockLayer<MeshBlock>& mesh_layer, const std::string& frame_id,
+    visualization_msgs::msg::MarkerArray* marker_msg, bool minimal_msg) {
   // Get all the mesh blocks.
   std::vector<Index3D> indices = mesh_layer.getAllBlockIndices();
 
@@ -182,9 +197,8 @@ void markerMessageFromMeshLayer(
     if (mesh_block->size() == 0) {
       continue;
     }
-    markerMessageFromMeshBlock(
-      mesh_block, frame_id,
-      &marker_msg->markers[output_index]);
+    markerMessageFromMeshBlock(mesh_block, frame_id,
+                               &marker_msg->markers[output_index], minimal_msg);
     marker_msg->markers[output_index].id = output_index;
     std::stringstream ns_stream;
     ns_stream << indices[i].x() << "_" << indices[i].y() << "_"
@@ -193,6 +207,58 @@ void markerMessageFromMeshLayer(
     output_index++;
   }
   marker_msg->markers.resize(output_index);
+}
+
+// Convert a mesh to a pointcloud
+void pointcloudMessageFromMeshLayer(const BlockLayer<MeshBlock>& mesh_layer,
+                                    const std::string& frame_id,
+                                    sensor_msgs::msg::PointCloud2* pc_msg) {
+  // first get a list of all the points
+  std::vector<Vector3f> vertices;
+
+  // get all blocks
+  std::vector<Index3D> indices = mesh_layer.getAllBlockIndices();
+
+  // loop through each block and append the vectors
+  for (size_t i = 0; i < indices.size(); i++) {
+    MeshBlock::ConstPtr mesh_block = mesh_layer.getBlockAtIndex(indices[i]);
+    if (mesh_block->size() == 0) continue;
+
+    // get the list of verticies in the block
+    std::vector<Vector3f> block_vertices = mesh_block->getVertexVectorOnCPU();
+
+    // append
+    vertices.insert(vertices.end(), block_vertices.begin(),
+                    block_vertices.end());
+  }
+
+  // now we have all the vertices, we can build the pointcloud
+
+  // fill in the header
+  pc_msg->header.frame_id = frame_id;
+
+  // setup the pointcloud datastructure
+  pc_msg->height = 1;
+  pc_msg->width = vertices.size();
+
+  pc_msg->is_dense = true;
+  pc_msg->is_bigendian = false;
+
+  // set fields
+  sensor_msgs::PointCloud2Modifier modifier(*pc_msg);
+  modifier.setPointCloud2FieldsByString(1, "xyz");
+  modifier.resize(vertices.size());
+
+  // fill in the pointcloud with data
+  sensor_msgs::PointCloud2Iterator<float> iter_x(*pc_msg, "x");
+  sensor_msgs::PointCloud2Iterator<float> iter_y(*pc_msg, "y");
+  sensor_msgs::PointCloud2Iterator<float> iter_z(*pc_msg, "z");
+
+  for (size_t i = 0; i < vertices.size(); ++i, ++iter_x, ++iter_y, ++iter_z) {
+    *iter_x = vertices[i].x();
+    *iter_y = vertices[i].y();
+    *iter_z = vertices[i].z();
+  }
 }
 
 }  // namespace conversions

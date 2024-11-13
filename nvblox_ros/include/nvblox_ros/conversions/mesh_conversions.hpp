@@ -24,9 +24,11 @@
 #include <vector>
 
 #include <nvblox_msgs/msg/mesh.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <visualization_msgs/msg/marker_array.hpp>
 
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 
 namespace nvblox
 {
@@ -46,8 +48,12 @@ void meshMessageFromMeshBlocks(
 
 // Convert a mesh to a marker array.
 void markerMessageFromMeshLayer(
-  const BlockLayer<MeshBlock> & mesh_layer, const std::string & frame_id,
-  visualization_msgs::msg::MarkerArray * marker_msg);
+    const BlockLayer<MeshBlock>& mesh_layer, const std::string& frame_id,
+    visualization_msgs::msg::MarkerArray* marker_msg, bool minimal_msg = false);
+
+void pointcloudMessageFromMeshLayer(const BlockLayer<MeshBlock>& mesh_layer,
+                                    const std::string& frame_id,
+                                    sensor_msgs::msg::PointCloud2* pc_msg);
 
 }  // namespace conversions
 }  // namespace nvblox
