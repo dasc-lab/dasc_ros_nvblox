@@ -212,7 +212,10 @@ void markerMessageFromMeshLayer(
 // Convert a mesh to a pointcloud
 void pointcloudMessageFromMeshLayer(const BlockLayer<MeshBlock>& mesh_layer,
                                     const std::string& frame_id,
-                                    sensor_msgs::msg::PointCloud2* pc_msg) {
+                                    sensor_msgs::msg::PointCloud2* pc_msg, int downsample, bool push_single) {
+  timing::Timer timer("ros/mesh/pc");
+  
+  timing::Timer timer_get_pc("ros/mesh/pc/get_points");
   // first get a list of all the points
   std::vector<Vector3f> vertices;
 
@@ -228,9 +231,17 @@ void pointcloudMessageFromMeshLayer(const BlockLayer<MeshBlock>& mesh_layer,
     std::vector<Vector3f> block_vertices = mesh_block->getVertexVectorOnCPU();
 
     // append
+    if (push_single)
+    {
+	    vertices.push_back(block_vertices[0]);
+    } else { 
     vertices.insert(vertices.end(), block_vertices.begin(),
                     block_vertices.end());
+    }
   }
+  timer_get_pc.Stop();
+  
+  timing::Timer timer_make_msg("ros/mesh/pc/make_msg");
 
   // now we have all the vertices, we can build the pointcloud
 
@@ -239,7 +250,7 @@ void pointcloudMessageFromMeshLayer(const BlockLayer<MeshBlock>& mesh_layer,
 
   // setup the pointcloud datastructure
   pc_msg->height = 1;
-  pc_msg->width = vertices.size();
+  pc_msg->width = vertices.size() / downsample;
 
   pc_msg->is_dense = true;
   pc_msg->is_bigendian = false;
@@ -254,7 +265,7 @@ void pointcloudMessageFromMeshLayer(const BlockLayer<MeshBlock>& mesh_layer,
   sensor_msgs::PointCloud2Iterator<float> iter_y(*pc_msg, "y");
   sensor_msgs::PointCloud2Iterator<float> iter_z(*pc_msg, "z");
 
-  for (size_t i = 0; i < vertices.size(); ++i, ++iter_x, ++iter_y, ++iter_z) {
+  for (size_t i = 0; i < vertices.size(); i = i + downsample, ++iter_x, ++iter_y, ++iter_z) {
     *iter_x = vertices[i].x();
     *iter_y = vertices[i].y();
     *iter_z = vertices[i].z();

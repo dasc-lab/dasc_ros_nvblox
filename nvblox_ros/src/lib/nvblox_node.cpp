@@ -850,10 +850,17 @@ void NvbloxNode::processMesh() {
 
   // optionally publish the mesh pointcloud
   if (mesh_pointcloud_publisher_->get_subscription_count() > 0) {
+	  int downsample=5;
+	  bool publish_single=false;
+    timing::Timer mesh_pc_timer("ros/mesh/output/createPCmsg");
     sensor_msgs::msg::PointCloud2 pc_msg;
     conversions::pointcloudMessageFromMeshLayer(mapper_->mesh_layer(),
-                                                global_frame_, &pc_msg);
+                                                global_frame_, &pc_msg, 
+						downsample, 
+						publish_single);
 
+    mesh_pc_timer.Stop();
+    timing::Timer mesh_pc_pub_timer("ros/mesh/output/pubPCmsg");
     mesh_pointcloud_publisher_->publish(pc_msg);
   }
 

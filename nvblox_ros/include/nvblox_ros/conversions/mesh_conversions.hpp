@@ -53,7 +53,9 @@ void markerMessageFromMeshLayer(
 
 void pointcloudMessageFromMeshLayer(const BlockLayer<MeshBlock>& mesh_layer,
                                     const std::string& frame_id,
-                                    sensor_msgs::msg::PointCloud2* pc_msg);
+                                    sensor_msgs::msg::PointCloud2* pc_msg, 
+				    int downsample=1, 
+				    bool push_single=false);
 
 }  // namespace conversions
 }  // namespace nvblox
