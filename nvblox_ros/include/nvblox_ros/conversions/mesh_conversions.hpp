@@ -57,6 +57,30 @@ void pointcloudMessageFromMeshLayer(const BlockLayer<MeshBlock>& mesh_layer,
 				    int downsample=1, 
 				    bool push_single=false);
 
+
+// Add the same defs for CertifiedMeshBlocks
+// Convert a mesh to a message.
+void meshMessageFromMeshLayer(
+  const BlockLayer<CertifiedMeshBlock> & mesh_layer,
+  nvblox_msgs::msg::Mesh * mesh_msg);
+
+void meshMessageFromMeshBlocks(
+  const BlockLayer<CertifiedMeshBlock> & mesh_layer,
+  const std::vector<Index3D> & block_indices,
+  nvblox_msgs::msg::Mesh * mesh_msg,
+  const std::vector<Index3D> & deleted_indices = std::vector<Index3D>());
+
+// Convert a mesh to a marker array.
+void markerMessageFromMeshLayer(
+    const BlockLayer<CertifiedMeshBlock>& mesh_layer, const std::string& frame_id,
+    visualization_msgs::msg::MarkerArray* marker_msg, bool minimal_msg = false);
+
+void pointcloudMessageFromMeshLayer(const BlockLayer<CertifiedMeshBlock>& mesh_layer,
+                                    const std::string& frame_id,
+                                    sensor_msgs::msg::PointCloud2* pc_msg, 
+				    int downsample=1, 
+				    bool push_single=false);
+
 }  // namespace conversions
 }  // namespace nvblox
 

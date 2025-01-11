@@ -377,6 +377,10 @@ void NvbloxNode::setupTimers() {
       std::chrono::duration<double>(1.0 / mesh_update_rate_hz_),
       std::bind(&NvbloxNode::processMesh, this), group_processing_);
 
+  certified_mesh_processing_timer_ = create_wall_timer(
+      std::chrono::duration<double>(1.0 / mesh_update_rate_hz_),
+      std::bind(&NvbloxNode::processCertifiedMesh, this), group_processing_);
+
   if (static_projective_layer_type_ == ProjectiveLayerType::kOccupancy) {
     occupancy_publishing_timer_ = create_wall_timer(
         std::chrono::duration<double>(1.0 / occupancy_publication_rate_hz_),
@@ -795,6 +799,7 @@ void NvbloxNode::processMesh() {
   if (!compute_mesh_) {
     return;
   }
+  RCLCPP_INFO(get_logger(), "Running processMesh");
   const rclcpp::Time timestamp = get_clock()->now();
   timing::Timer ros_total_timer("ros/total");
   timing::Timer ros_mesh_timer("ros/mesh");
@@ -863,6 +868,63 @@ void NvbloxNode::processMesh() {
     timing::Timer mesh_pc_pub_timer("ros/mesh/output/pubPCmsg");
     mesh_pointcloud_publisher_->publish(pc_msg);
   }
+
+  mesh_output_timer.Stop();
+}
+
+void NvbloxNode::processCertifiedMesh() {
+  if (!compute_mesh_) {
+    return;
+  }
+
+  RCLCPP_INFO(get_logger(), "running process certified mesh");
+  
+  const rclcpp::Time timestamp = get_clock()->now();
+  timing::Timer ros_total_timer("ros/total");
+  timing::Timer ros_mesh_timer("ros/certified_mesh");
+
+  timing::Timer mesh_integration_timer("ros/certified_mesh/integrate_and_color");
+  mapper_->generateCertifiedMesh();
+  const std::vector<Index3D> mesh_updated_list = 
+        mapper_->tsdf_layer().getAllBlockIndices();
+  mesh_integration_timer.Stop();
+
+  // In the case that some mesh blocks have been re-added after deletion, remove
+  // them from the deleted list.
+  for (const Index3D& idx : mesh_updated_list) {
+    certified_mesh_blocks_deleted_.erase(idx);
+  }
+  // Make a list to be published to rviz of blocks to be removed from the viz
+  const std::vector<Index3D> mesh_blocks_to_delete(certified_mesh_blocks_deleted_.begin(),
+                                                   certified_mesh_blocks_deleted_.end());
+  certified_mesh_blocks_deleted_.clear();
+
+  bool should_publish = !mesh_updated_list.empty();
+
+  // Publish the mesh updates.
+  timing::Timer mesh_output_timer("ros/certified_mesh/output");
+  size_t new_subscriber_count = certified_mesh_publisher_->get_subscription_count();
+  if (new_subscriber_count > 0) {
+    nvblox_msgs::msg::Mesh mesh_msg;
+    // In case we have new subscribers, publish the ENTIRE map once.
+    if (new_subscriber_count > certified_mesh_subscriber_count_) {
+      RCLCPP_INFO(get_logger(), "Got a new subscriber, sending entire map.");
+      conversions::meshMessageFromMeshLayer(mapper_->certified_mesh_layer(), &mesh_msg);
+      mesh_msg.clear = true;
+      should_publish = true;
+    } else {
+      conversions::meshMessageFromMeshBlocks(mapper_->certified_mesh_layer(),
+                                             mesh_updated_list, &mesh_msg,
+                                             mesh_blocks_to_delete);
+    }
+    mesh_msg.header.frame_id = global_frame_;
+    mesh_msg.header.stamp = timestamp;
+    if (should_publish) {
+      certified_mesh_publisher_->publish(mesh_msg);
+    }
+  }
+  certified_mesh_subscriber_count_ = new_subscriber_count;
+
 
   mesh_output_timer.Stop();
 }

@@ -116,6 +116,7 @@ class NvbloxNode : public rclcpp::Node {
   virtual void processEsdf();
   virtual void publishEsdf3d();
   virtual void processMesh();
+  virtual void processCertifiedMesh();
 
   // Publish data on fixed frequency
   void publishOccupancyPointcloud();
@@ -224,6 +225,7 @@ class NvbloxNode : public rclcpp::Node {
 
   // Publishers
   rclcpp::Publisher<nvblox_msgs::msg::Mesh>::SharedPtr mesh_publisher_;
+  rclcpp::Publisher<nvblox_msgs::msg::Mesh>::SharedPtr certified_mesh_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
       esdf_pointcloud_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr
@@ -272,6 +274,7 @@ class NvbloxNode : public rclcpp::Node {
   rclcpp::TimerBase::SharedPtr esdf_processing_timer_;
   rclcpp::TimerBase::SharedPtr esdf_3d_publish_timer_;
   rclcpp::TimerBase::SharedPtr mesh_processing_timer_;
+  rclcpp::TimerBase::SharedPtr certified_mesh_processing_timer_;
   rclcpp::TimerBase::SharedPtr clear_outside_radius_timer_;
 
   // ROS & nvblox settings
@@ -394,6 +397,7 @@ class NvbloxNode : public rclcpp::Node {
 
   // Cache the last known number of subscribers.
   size_t mesh_subscriber_count_ = 0;
+  size_t certified_mesh_subscriber_count_ = 0;
 
   // Image queues.
   std::deque<std::pair<sensor_msgs::msg::Image::ConstSharedPtr,
@@ -416,6 +420,7 @@ class NvbloxNode : public rclcpp::Node {
   // Keeps track of the mesh blocks deleted such that we can publish them for
   // deletion in the rviz plugin
   Index3DSet mesh_blocks_deleted_;
+  Index3DSet certified_mesh_blocks_deleted_;
 };
 
 }  // namespace nvblox

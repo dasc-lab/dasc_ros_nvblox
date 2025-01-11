@@ -46,6 +46,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Mesh.msg"
   "msg/Index3D.msg"
   "msg/DistanceMapSlice.msg"
+  "msg/LocalEsdf.msg"
   DEPENDENCIES std_msgs geometry_msgs
 )
 
