@@ -98,7 +98,7 @@ void NvbloxNode::processMessageQueue(
   auto & clk = *get_clock();
   RCLCPP_INFO_STREAM_THROTTLE(get_logger(), clk, kPublishPeriodMs,
                               "Timing statistics: \n"
-                                  << nvblox::timing::Timing::PrintMinimal());
+                                  << nvblox::timing::Timing::Print());
 }
 
 template<typename MessageType>
