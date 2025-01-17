@@ -877,6 +877,10 @@ void NvbloxNode::processCertifiedMesh() {
     return;
   }
 
+  if (!use_certified_tsdf_) {
+    return;
+  }
+
   RCLCPP_INFO(get_logger(), "running process certified mesh");
   
   const rclcpp::Time timestamp = get_clock()->now();
