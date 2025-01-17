@@ -96,7 +96,7 @@ class RelativeCovarianceNode : public rclcpp::Node {
   }
 
   void callback(const PoseWithCovMsg::SharedPtr msg) {
-    RCLCPP_INFO(get_logger(), "got message");
+    RCLCPP_DEBUG(get_logger(), "relative covariance node got a message");
 
     // Extract the pose and covariance
     Transform pose = extract_pose(msg);
@@ -128,10 +128,11 @@ class RelativeCovarianceNode : public rclcpp::Node {
 	    std::cout << evals.transpose() << std::endl;
     }
 
-    RCLCPP_INFO(get_logger(), "min eigval of relative_cov is %f", relative_cov.eigenvalues().real().minCoeff());
+    RCLCPP_INFO(get_logger(), "Eigvals of relative_cov are in [%g, %g]",
+                evals.real().minCoeff(), evals.real().maxCoeff());
 
     // publish the relative transform object
-    publish(msg, relative_pose, relative_cov);
+    publish(msg, pose, relative_cov);
 
     // copy over the last info
     last_pose_ = pose;
@@ -140,18 +141,17 @@ class RelativeCovarianceNode : public rclcpp::Node {
     return;
   }
 
-  void publish(const PoseWithCovMsg::SharedPtr msg,
-               const Transform& relative_pose, const CovMatrix& relative_cov) {
+  void publish(const PoseWithCovMsg::SharedPtr msg, const Transform& pose,
+               const CovMatrix& cov) {
     // uses the same header as the msg
-    // publishes a new pose with cov message
+    // publishes a new PoseWithCov message
     PoseWithCovMsg new_msg;
     new_msg.header = msg->header;
-    new_msg.header.frame_id = publish_frame;
-    fill_transform(new_msg, relative_pose);
-    fill_covariance(new_msg, relative_cov);
+    fill_transform(new_msg, pose);
+    fill_covariance(new_msg, cov);
 
     publisher_->publish(new_msg);
-    RCLCPP_INFO(get_logger(), "published new message");
+    RCLCPP_DEBUG(get_logger(), "published message");
   }
 
  public:
@@ -209,7 +209,6 @@ class RelativeCovarianceNode : public rclcpp::Node {
  private:
   // PARAMETERS
   double correlation_coefficient_ = 0.99;
-  std::string publish_frame = "body";  // TODO: make this a parameter
 
   // PRIVATE VARS:
   Transform last_pose_ = Transform::Identity();
@@ -221,7 +220,7 @@ class RelativeCovarianceNode : public rclcpp::Node {
 };
 
 int main(int argc, char* argv[]) {
-  bool run_tests = true;
+  bool run_tests = false;
 
   rclcpp::init(argc, argv);
   auto node = std::make_shared<RelativeCovarianceNode>();
