@@ -141,7 +141,7 @@ class RelativeCovarianceNode : public rclcpp::Node {
 	    std::cout << evals.transpose() << std::endl;
     }
 
-    RCLCPP_INFO(get_logger(), "Eigvals of relative_cov are in [%g, %g]",
+    RCLCPP_DEBUG(get_logger(), "Eigvals of relative_cov are in [%g, %g]",
                 evals.real().minCoeff(), evals.real().maxCoeff());
 
     // publish the relative transform object
