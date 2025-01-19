@@ -79,7 +79,7 @@ void NvbloxNode::processMessageQueue(
       auto & clk = *get_clock();
       RCLCPP_WARN_STREAM_THROTTLE(
         get_logger(), clk, kLostMessagesPublishPeriodMs,
-        "Deleted " << num_messages_lost << "because we could not interpolate transforms.");
+        "Deleted " << num_messages_lost << " because we could not interpolate transforms.");
     }
   }
   lock.unlock();
