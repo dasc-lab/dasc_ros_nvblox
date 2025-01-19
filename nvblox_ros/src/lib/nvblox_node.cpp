@@ -546,15 +546,17 @@ void NvbloxNode::processEsdf() {
     // Get the slice as an image
     timing::Timer esdf_slice_compute_timer("ros/esdf/output/compute");
     AxisAlignedBoundingBox aabb;
+    AxisAlignedBoundingBox certified_aabb;
     Image<float> map_slice_image;
     esdf_slice_converter_.distanceMapSliceImageFromLayer(
         mapper_->esdf_layer(), esdf_slice_height_, &map_slice_image, &aabb);
     esdf_slice_compute_timer.Stop();
 
-    // LOG(INFO) << "Creating certified distance map slice";
+    // Creating certified distance map slice
     Image<float> certified_map_slice_image;
     certified_esdf_slice_converter_.distanceMapSliceImageFromLayer(
-        mapper_->certified_esdf_layer(), esdf_slice_height_, &certified_map_slice_image, &aabb);
+        mapper_->certified_esdf_layer(), esdf_slice_height_,
+        &certified_map_slice_image, &certified_aabb);
 
     // Slice pointcloud for RVIZ
     if (esdf_pointcloud_publisher_->get_subscription_count() > 0) {
@@ -585,7 +587,7 @@ void NvbloxNode::processEsdf() {
       timing::Timer esdf_output_human_slice_timer("ros/certified_esdf/output/slice");
       nvblox_msgs::msg::DistanceMapSlice certified_map_slice_msg;
       certified_esdf_slice_converter_.distanceMapSliceImageToMsg(
-          certified_map_slice_image, aabb, esdf_slice_height_,
+          certified_map_slice_image, certified_aabb, esdf_slice_height_,
           mapper_->voxel_size_m(), &certified_map_slice_msg);
       certified_map_slice_msg.header.frame_id = global_frame_;
       certified_map_slice_msg.header.stamp = get_clock()->now();
@@ -601,7 +603,7 @@ void NvbloxNode::processEsdf() {
           "ros/certified_esdf/output/pointcloud");
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
       certified_esdf_slice_converter_.sliceImageToPointcloud(
-          certified_map_slice_image, aabb, esdf_slice_height_,
+          certified_map_slice_image, certified_aabb, esdf_slice_height_,
           mapper_->certified_esdf_layer().voxel_size(), &pointcloud_msg);
       pointcloud_msg.header.frame_id = global_frame_;
       pointcloud_msg.header.stamp = get_clock()->now();
@@ -799,7 +801,6 @@ void NvbloxNode::processMesh() {
   if (!compute_mesh_) {
     return;
   }
-  RCLCPP_INFO(get_logger(), "Running processMesh");
   const rclcpp::Time timestamp = get_clock()->now();
   timing::Timer ros_total_timer("ros/total");
   timing::Timer ros_mesh_timer("ros/mesh");
@@ -881,8 +882,6 @@ void NvbloxNode::processCertifiedMesh() {
     return;
   }
 
-  RCLCPP_INFO(get_logger(), "running process certified mesh");
-  
   const rclcpp::Time timestamp = get_clock()->now();
   timing::Timer ros_total_timer("ros/total");
   timing::Timer ros_mesh_timer("ros/certified_mesh");
