@@ -137,8 +137,17 @@ bool Transformer::lookupTransformQueue(
   const rclcpp::Time & timestamp,
   Transform * transform)
 {
+  // To get the latest transform, originally the code was 
+  //     if (timestamp == rclcpp::Time(0) {
+  //        ...
+  //     }
+  // However, when using rclcpp::Time(0), it automatically sets the clock_type to RCL_SYSTEM_TIME
+  // but if we are using a rosbag, the messages are coming on clock_type RCL_ROS_TIME
+  // this means that the equality check fails. 
+  // so instead, we explicitly construct a time that has the same clocktype as the timestamp
+
   // Get latest transform
-  if (timestamp == rclcpp::Time(0)) {
+  if (timestamp == rclcpp::Time(0, 0, timestamp.get_clock_type())) {
     if (transform_queue_.empty()) {
       return false;
     }
