@@ -10,19 +10,32 @@ class RelativeCovarianceNode : public rclcpp::Node {
  public:
   // constructor
   RelativeCovarianceNode() : Node("relative_covariance") {
+
+
+	  // Initialize parameters
+	  correlation_coefficient_ = this->declare_parameter<double>("correlation_coefficient", 0.99);
+
     // Initialize the publisher
     publisher_ =
-        this->create_publisher<PoseWithCovMsg>("/relative_pose_with_cov", 10);
+        this->create_publisher<PoseWithCovMsg>("pose_with_relative_covariance", 10);
 
     // Initialize the subscriber
     subscription_ = this->create_subscription<PoseWithCovMsg>(
-        "/visual_slam/tracking/vo_pose_covariance", 10,
+		    "pose_with_covariance", 
+		    10,
         std::bind(&RelativeCovarianceNode::callback, this,
                   std::placeholders::_1));
 
+
+    // get the topic name
+
     RCLCPP_INFO(this->get_logger(),
-                "Node initialized and subscribing to "
-                "/visual_slam/tracking/vo_pose_covariance");
+                "Node initialized and subscribing to %s, publishing to %s", 
+		subscription_->get_topic_name(),
+		publisher_->get_topic_name()
+	       );
+    RCLCPP_INFO(this->get_logger(),
+		    "Using correlation coefficient: %f", correlation_coefficient_);
   }
 
  private:

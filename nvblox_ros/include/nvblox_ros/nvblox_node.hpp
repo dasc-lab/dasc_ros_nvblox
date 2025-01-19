@@ -222,6 +222,7 @@ class NvbloxNode : public rclcpp::Node {
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
   rclcpp::Subscription<certified_perception_msgs::msg::PoseWithErrorStamped>::
       SharedPtr pose_with_error_sub_;
+  rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_with_relative_cov_sub_;
 
   // Publishers
   rclcpp::Publisher<nvblox_msgs::msg::Mesh>::SharedPtr mesh_publisher_;
