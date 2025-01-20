@@ -57,6 +57,9 @@ void NvbloxNode::getParameters() {
   use_certified_tsdf_ =
       declare_parameter<bool>("use_certified_tsdf", use_certified_tsdf_);
   certified_n_std_ = declare_parameter<float>("certified_n_std", certified_n_std_);
+  deallocate_fully_deflated_blocks_ = declare_parameter<bool>(
+      "deallocate_fully_deflated_blocks", deallocate_fully_deflated_blocks_);
+
   esdf_slice_height_ =
       declare_parameter<float>("esdf_slice_height", esdf_slice_height_);
   esdf_2d_min_height_ =

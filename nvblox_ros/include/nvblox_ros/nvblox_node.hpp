@@ -231,8 +231,6 @@ class NvbloxNode : public rclcpp::Node {
   rclcpp::Subscription<geometry_msgs::msg::TransformStamped>::SharedPtr
       transform_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
-  // rclcpp::Subscription<certified_perception_msgs::msg::PoseWithErrorStamped>::
-  //     SharedPtr pose_with_error_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_with_relative_cov_sub_;
 
   // Publishers
@@ -281,7 +279,6 @@ class NvbloxNode : public rclcpp::Node {
   rclcpp::TimerBase::SharedPtr depth_processing_timer_;
   rclcpp::TimerBase::SharedPtr color_processing_timer_;
   rclcpp::TimerBase::SharedPtr pointcloud_processing_timer_;
-  // rclcpp::TimerBase::SharedPtr pose_with_error_processing_timer_;
   rclcpp::TimerBase::SharedPtr pose_with_relative_cov_processing_timer_;
   rclcpp::TimerBase::SharedPtr occupancy_publishing_timer_;
   rclcpp::TimerBase::SharedPtr esdf_processing_timer_;
@@ -300,8 +297,9 @@ class NvbloxNode : public rclcpp::Node {
   bool is_realsense_data_ = false;
   
   // whether or not to use the certified tsdf
-  bool use_certified_tsdf_ = true;
+  bool use_certified_tsdf_ = false;
   float certified_n_std_ = 1.0f;
+  bool deallocate_fully_deflated_blocks_ = true;
 
   // Toggle parameters
   bool use_depth_ = true;
