@@ -37,12 +37,21 @@ NvbloxMeshDisplay::NvbloxMeshDisplay() {
       "Mesh Color", "Color + Shading", "How to color the displayed mesh.", this,
       SLOT(updateMeshColorOptions()));
 
+  fixed_color_property_ = new rviz_common::properties::ColorProperty(
+      "Fixed Color", QColor(204, 51, 204), "Color to use for the mesh.",
+      this, SLOT(updateFixedColorOption())
+  );
+
   // Set up valid options.
   mesh_color_property_->addOption("Color", NvbloxMeshVisual::MeshColor::kColor);
   mesh_color_property_->addOption("Color + Shading",
                                   NvbloxMeshVisual::MeshColor::kLambertColor);
   mesh_color_property_->addOption("Normals",
                                   NvbloxMeshVisual::MeshColor::kNormals);
+  mesh_color_property_->addOption("Fixed Color", 
+                                  NvbloxMeshVisual::MeshColor::kFixedColor);
+  mesh_color_property_->addOption("Fixed Color + Shading", 
+                                  NvbloxMeshVisual::MeshColor::kFixedColorWithShading);
 }
 
 void NvbloxMeshDisplay::updateCeilingOptions() {
@@ -56,6 +65,12 @@ void NvbloxMeshDisplay::updateMeshColorOptions() {
   if (visual_ != nullptr) {
     visual_->setMeshColor(static_cast<NvbloxMeshVisual::MeshColor>(
         mesh_color_property_->getOptionInt()));
+  }
+}
+
+void NvbloxMeshDisplay::updateFixedColorOption() {
+  if (visual_ != nullptr) {
+    visual_->setFixedColor(fixed_color_property_->getOgreColor());
   }
 }
 

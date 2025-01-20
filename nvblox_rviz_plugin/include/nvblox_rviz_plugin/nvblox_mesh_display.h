@@ -23,6 +23,7 @@
 #include <rviz_common/properties/bool_property.hpp>
 #include <rviz_common/properties/enum_property.hpp>
 #include <rviz_common/properties/float_property.hpp>
+#include <rviz_common/properties/color_property.hpp>
 
 #include <nvblox_msgs/msg/mesh.hpp>
 
@@ -43,6 +44,8 @@ class __attribute__((visibility("default"))) NvbloxMeshDisplay
   virtual void updateCeilingOptions();
  public Q_SLOTS:
   virtual void updateMeshColorOptions();
+ public Q_SLOTS:
+  virtual void updateFixedColorOption();
 
  protected:
   virtual void onInitialize();
@@ -56,6 +59,7 @@ class __attribute__((visibility("default"))) NvbloxMeshDisplay
   rviz_common::properties::BoolProperty* cut_ceiling_property_;
   rviz_common::properties::FloatProperty* ceiling_height_property_;
   rviz_common::properties::EnumProperty* mesh_color_property_;
+  rviz_common::properties::ColorProperty* fixed_color_property_;
 
   std::unique_ptr<NvbloxMeshVisual> visual_;
 };

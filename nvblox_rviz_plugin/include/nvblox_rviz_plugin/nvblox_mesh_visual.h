@@ -28,7 +28,7 @@ namespace nvblox_rviz_plugin {
 /// Visualizes a single nvblox_msgs::Mesh message.
 class NvbloxMeshVisual {
  public:
-  enum MeshColor { kColor = 0, kLambertColor = 1, kNormals = 2 };
+  enum MeshColor { kColor = 0, kLambertColor = 1, kNormals = 2, kFixedColor = 3 , kFixedColorWithShading = 4};
 
   NvbloxMeshVisual(Ogre::SceneManager* scene_manager,
                    Ogre::SceneNode* parent_node);
@@ -42,6 +42,7 @@ class NvbloxMeshVisual {
 
   void setCeilingCutoff(bool cut_ceiling, float ceiling_height);
   void setMeshColor(MeshColor mesh_color);
+  void setFixedColor(const Ogre::ColourValue & fixed_color);
 
  private:
   // Color helpers.
@@ -62,6 +63,7 @@ class NvbloxMeshVisual {
   bool cut_ceiling_ = false;
   float ceiling_height_ = 0.0f;
   MeshColor mesh_color_ = MeshColor::kColor;
+  Ogre::ColourValue fixed_color_;
 
   float block_size_ = 0.0f;
 
