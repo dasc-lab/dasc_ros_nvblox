@@ -73,6 +73,7 @@ public:
   }
 
   Transform poseToEigen(const geometry_msgs::msg::Pose & pose) const;
+  TransformCovariance covToEigen(const std::array<double, 36> & cov) const;
 
 private:
   bool lookupTransformTf(

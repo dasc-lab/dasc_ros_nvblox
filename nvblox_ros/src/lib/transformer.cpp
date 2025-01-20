@@ -56,6 +56,12 @@ bool Transformer::lookupTransformToGlobalFrame(
     return false;
   }
 
+  if (sensor_frame == global_frame_) {
+    // If the sensor frame is the global frame, we're done.
+    *transform = Transform::Identity();
+    return true;
+  }
+
   // Check if we have a transform queue.
   if (!use_topic_transforms_) {
     // Then I guess we're using TF.
@@ -197,6 +203,12 @@ bool Transformer::lookupSensorTransform(
       RCLCPP_INFO(
         node_->get_logger(),
         "Could not look up transform to sensor.");
+        {
+            // throw an error
+            int* nptr = NULL;
+            std::cout << *nptr;
+        }
+        return false;
     }
     return success;
   } else {
@@ -224,6 +236,19 @@ Transform Transformer::poseToEigen(const geometry_msgs::msg::Pose & msg) const
     Eigen::Quaterniond(
       msg.orientation.w, msg.orientation.x,
       msg.orientation.y, msg.orientation.z));
+}
+
+
+TransformCovariance Transformer::covToEigen(
+    const std::array<double, 36>& cov) const
+{
+  TransformCovariance cov_eigen;
+  for (size_t i = 0; i < 6; ++i) {
+    for (size_t j = 0; j < 6; ++j) {
+      cov_eigen(i, j) = cov[i * 6 + j]; // row major
+    }
+  }
+  return cov_eigen;
 }
 
 }  // namespace nvblox
