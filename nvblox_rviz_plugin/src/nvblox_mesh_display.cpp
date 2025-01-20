@@ -105,6 +105,7 @@ void NvbloxMeshDisplay::processMessage(
                               ceiling_height_property_->getFloat());
     visual_->setMeshColor(static_cast<NvbloxMeshVisual::MeshColor>(
         mesh_color_property_->getOptionInt()));
+    visual_->setFixedColor(fixed_color_property_->getOgreColor());
   }
 
   // Now set or update the contents of the chosen visual.
