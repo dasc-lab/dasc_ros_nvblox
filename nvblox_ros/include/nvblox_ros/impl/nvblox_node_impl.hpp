@@ -130,7 +130,7 @@ void NvbloxNode::limitQueueSizeByDeletingOldestMessages(
       queue_ptr->begin() + num_elements_to_delete);
     constexpr int kPublishPeriodMs = 1000;
     auto & clk = *get_clock();
-    RCLCPP_INFO_STREAM_THROTTLE(
+    RCLCPP_WARN_STREAM_THROTTLE(
       get_logger(), clk, kPublishPeriodMs,
       queue_name << " queue was longer than " << max_num_messages <<
         " deleted " << num_elements_to_delete << " messages.");
