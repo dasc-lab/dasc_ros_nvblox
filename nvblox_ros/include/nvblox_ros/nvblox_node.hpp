@@ -46,10 +46,11 @@
 #include <decomp_geometry/geometric_utils.h>
 #include <decomp_util/line_segment.h>
 #include <decomp_util/seed_decomp.h>
-#include <certified_perception_msgs/msg/pose_with_error_stamped.hpp>
+// #include <certified_perception_msgs/msg/pose_with_error_stamped.hpp>
 #include <decomp_ros_msgs/msg/polyhedron_stamped.hpp>
 #include <geometry_msgs/msg/point.hpp>
 #include <geometry_msgs/msg/pose.hpp>
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include "pcl_conversions/pcl_conversions.h"
 
@@ -79,6 +80,10 @@ class NvbloxNode : public rclcpp::Node {
   void advertiseServices();
   void setupTimers();
 
+
+  // mark a sphere around the specified initial area as free
+  void markInitialSphereFree();
+
   // Callback functions. These just stick images in a queue.
   void depthImageCallback(
       const sensor_msgs::msg::Image::ConstSharedPtr& depth_img_ptr,
@@ -88,9 +93,12 @@ class NvbloxNode : public rclcpp::Node {
       const sensor_msgs::msg::CameraInfo::ConstSharedPtr& color_info_msg);
   void pointcloudCallback(
       const sensor_msgs::msg::PointCloud2::ConstSharedPtr pointcloud);
-  void poseWithErrorCallback(
-      const certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr
-          pose_with_error);
+  // void poseWithErrorCallback(
+  //     const certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr
+  //         pose_with_error);
+  void poseWithRelativeCovCallback(
+      const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr
+          pose_with_relative_cov);
 
   void savePly(
       const std::shared_ptr<nvblox_msgs::srv::FilePath::Request> request,
@@ -110,7 +118,7 @@ class NvbloxNode : public rclcpp::Node {
   // Does whatever processing there is to be done, depending on what
   // transforms are available.
   virtual void processDepthQueue();
-  virtual void processPoseWithErrorQueue();
+  virtual void processPoseWithRelativeCovQueue();
   virtual void processColorQueue();
   virtual void processPointcloudQueue();
   virtual void processEsdf();
@@ -132,9 +140,12 @@ class NvbloxNode : public rclcpp::Node {
           color_camera_pair);
   virtual bool processLidarPointcloud(
       const sensor_msgs::msg::PointCloud2::ConstSharedPtr& pointcloud_ptr);
-  virtual bool processPoseWithError(
-      const certified_perception_msgs::msg::PoseWithErrorStamped::
-          ConstSharedPtr& pose_with_error);
+  // virtual bool processPoseWithError(
+  //     const certified_perception_msgs::msg::PoseWithErrorStamped::
+  //         ConstSharedPtr& pose_with_error);
+  virtual bool processPoseWithRelativeCov(
+      const geometry_msgs::msg::PoseWithCovarianceStamped::
+          ConstSharedPtr& pose_with_relative_cov);
 
   bool canTransform(const std_msgs::msg::Header& header);
 
@@ -200,7 +211,7 @@ class NvbloxNode : public rclcpp::Node {
       sensor_msgs::msg::Image, sensor_msgs::msg::CameraInfo>
       time_policy_t;
 
-  // Depth sub.
+  // Depth sub. 
   std::shared_ptr<message_filters::Synchronizer<time_policy_t>> timesync_depth_;
   message_filters::Subscriber<sensor_msgs::msg::Image> depth_sub_;
   message_filters::Subscriber<sensor_msgs::msg::CameraInfo>
@@ -220,8 +231,8 @@ class NvbloxNode : public rclcpp::Node {
   rclcpp::Subscription<geometry_msgs::msg::TransformStamped>::SharedPtr
       transform_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr pose_sub_;
-  rclcpp::Subscription<certified_perception_msgs::msg::PoseWithErrorStamped>::
-      SharedPtr pose_with_error_sub_;
+  // rclcpp::Subscription<certified_perception_msgs::msg::PoseWithErrorStamped>::
+  //     SharedPtr pose_with_error_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pose_with_relative_cov_sub_;
 
   // Publishers
@@ -270,7 +281,8 @@ class NvbloxNode : public rclcpp::Node {
   rclcpp::TimerBase::SharedPtr depth_processing_timer_;
   rclcpp::TimerBase::SharedPtr color_processing_timer_;
   rclcpp::TimerBase::SharedPtr pointcloud_processing_timer_;
-  rclcpp::TimerBase::SharedPtr pose_with_error_processing_timer_;
+  // rclcpp::TimerBase::SharedPtr pose_with_error_processing_timer_;
+  rclcpp::TimerBase::SharedPtr pose_with_relative_cov_processing_timer_;
   rclcpp::TimerBase::SharedPtr occupancy_publishing_timer_;
   rclcpp::TimerBase::SharedPtr esdf_processing_timer_;
   rclcpp::TimerBase::SharedPtr esdf_3d_publish_timer_;
@@ -286,12 +298,15 @@ class NvbloxNode : public rclcpp::Node {
   ProjectiveLayerType static_projective_layer_type_ =
       ProjectiveLayerType::kTsdf;
   bool is_realsense_data_ = false;
+  
+  // whether or not to use the certified tsdf
+  bool use_certified_tsdf_ = true;
+  float certified_n_std_ = 1.0f;
 
   // Toggle parameters
   bool use_depth_ = true;
   bool use_lidar_ = true;
   bool use_color_ = true;
-  bool use_certified_tsdf_ = true;
   bool compute_esdf_ = true;
   bool compute_mesh_ = true;
 
@@ -386,10 +401,14 @@ class NvbloxNode : public rclcpp::Node {
   libstatistics_collector::topic_statistics_collector::
       ReceivedMessagePeriodCollector<sensor_msgs::msg::PointCloud2>
           pointcloud_frame_statistics_;
+  // libstatistics_collector::topic_statistics_collector::
+  //     ReceivedMessagePeriodCollector<
+  //         certified_perception_msgs::msg::PoseWithErrorStamped>
+  //         pose_with_error_frame_statistics_;
   libstatistics_collector::topic_statistics_collector::
       ReceivedMessagePeriodCollector<
-          certified_perception_msgs::msg::PoseWithErrorStamped>
-          pose_with_error_frame_statistics_;
+            geometry_msgs::msg::PoseWithCovarianceStamped>
+          pose_with_relative_cov_statistics_;
 
   // State for integrators running at various speeds.
   rclcpp::Time last_depth_update_time_;
@@ -408,15 +427,18 @@ class NvbloxNode : public rclcpp::Node {
                        sensor_msgs::msg::CameraInfo::ConstSharedPtr>>
       color_image_queue_;
   std::deque<sensor_msgs::msg::PointCloud2::ConstSharedPtr> pointcloud_queue_;
+  // std::deque<
+  //     certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr>
+  //     pose_with_error_queue_;
   std::deque<
-      certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr>
-      pose_with_error_queue_;
+      geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr>
+      pose_with_relative_cov_queue_;
 
   // Image queue mutexes.
   std::mutex depth_queue_mutex_;
   std::mutex color_queue_mutex_;
   std::mutex pointcloud_queue_mutex_;
-  std::mutex pose_with_error_queue_mutex_;
+  std::mutex pose_with_relative_cov_queue_mutex_;
 
   // Keeps track of the mesh blocks deleted such that we can publish them for
   // deletion in the rviz plugin

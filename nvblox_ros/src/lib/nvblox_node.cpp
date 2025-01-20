@@ -64,20 +64,15 @@ NvbloxNode::NvbloxNode(const rclcpp::NodeOptions& options,
                                      static_projective_layer_type_);
   initializeMapper(mapper_name, mapper_.get(), this);
 
-  mapper_->certified_mapping_enabled = use_certified_tsdf_;
-  LOG(INFO) << "Certified mapping enabled: "
-            << mapper_->certified_mapping_enabled;
+
+  // Enable certified mapping
+  if (use_certified_tsdf_) {
+    mapper_->enableCertifiedMapping(true);
+  }
   // TODO(rgg): set deallocation for fully deflated blocks
 
   // mark initial free area
-  if (mark_free_sphere_radius_ > 0) {
-    Vector3f mark_free_sphere_center(mark_free_sphere_center_x_,
-                                     mark_free_sphere_center_y_,
-                                     mark_free_sphere_center_z_);
-
-    mapper_.get()->markUnobservedTsdfFreeInsideRadius(mark_free_sphere_center,
-                                                      mark_free_sphere_radius_);
-  }
+  markInitialSphereFree();
 
   // Setup interactions with ROS
   subscribeToTopics();
@@ -89,6 +84,7 @@ NvbloxNode::NvbloxNode(const rclcpp::NodeOptions& options,
   depth_frame_statistics_.Start();
   rgb_frame_statistics_.Start();
   pointcloud_frame_statistics_.Start();
+  pose_with_relative_cov_statistics_.Start();
 
   RCLCPP_INFO_STREAM(get_logger(), "Started up nvblox node in frame "
                                        << global_frame_ << " and voxel size "
@@ -98,411 +94,6 @@ NvbloxNode::NvbloxNode(const rclcpp::NodeOptions& options,
   last_depth_update_time_ = rclcpp::Time(0ul, get_clock()->get_clock_type());
   last_color_update_time_ = rclcpp::Time(0ul, get_clock()->get_clock_type());
   last_lidar_update_time_ = rclcpp::Time(0ul, get_clock()->get_clock_type());
-}
-
-void NvbloxNode::getParameters() {
-  RCLCPP_INFO_STREAM(get_logger(), "NvbloxNode::getParameters()");
-
-  const bool is_occupancy =
-      declare_parameter<bool>("use_static_occupancy_layer", false);
-  if (is_occupancy) {
-    static_projective_layer_type_ = ProjectiveLayerType::kOccupancy;
-    RCLCPP_INFO_STREAM(
-        get_logger(),
-        "static_projective_layer_type: occupancy "
-        "(Attention: ESDF and Mesh integration is not yet implemented "
-        "for occupancy.)");
-  } else {
-    static_projective_layer_type_ = ProjectiveLayerType::kTsdf;
-    RCLCPP_INFO_STREAM(
-        get_logger(),
-        "static_projective_layer_type: TSDF"
-        " (for occupancy set the use_static_occupancy_layer parameter)");
-  }
-
-  // Declare & initialize the parameters.
-  voxel_size_ = declare_parameter<float>("voxel_size", voxel_size_);
-  global_frame_ = declare_parameter<std::string>("global_frame", global_frame_);
-  pose_frame_ = declare_parameter<std::string>("pose_frame", pose_frame_);
-  is_realsense_data_ =
-      declare_parameter<bool>("is_realsense_data", is_realsense_data_);
-  compute_mesh_ = declare_parameter<bool>("compute_mesh", compute_mesh_);
-  compute_esdf_ = declare_parameter<bool>("compute_esdf", compute_esdf_);
-  esdf_2d_ = declare_parameter<bool>("esdf_2d", esdf_2d_);
-  esdf_distance_slice_ =
-      declare_parameter<bool>("esdf_distance_slice", esdf_distance_slice_);
-  use_color_ = declare_parameter<bool>("use_color", use_color_);
-  use_depth_ = declare_parameter<bool>("use_depth", use_depth_);
-  use_lidar_ = declare_parameter<bool>("use_lidar", use_lidar_);
-  use_certified_tsdf_ =
-      declare_parameter<bool>("use_certified_tsdf", use_certified_tsdf_);
-  esdf_slice_height_ =
-      declare_parameter<float>("esdf_slice_height", esdf_slice_height_);
-  esdf_2d_min_height_ =
-      declare_parameter<float>("esdf_2d_min_height", esdf_2d_min_height_);
-  esdf_2d_max_height_ =
-      declare_parameter<float>("esdf_2d_max_height", esdf_2d_max_height_);
-  esdf_3d_origin_frame_id_ = declare_parameter<std::string>(
-      "esdf_3d_origin_frame_id", esdf_3d_origin_frame_id_);
-  esdf_3d_pub_range_x_ =
-      declare_parameter<float>("esdf_3d_pub_range_x", esdf_3d_pub_range_x_);
-  esdf_3d_pub_range_y_ =
-      declare_parameter<float>("esdf_3d_pub_range_y", esdf_3d_pub_range_y_);
-  esdf_3d_pub_range_z_ =
-      declare_parameter<float>("esdf_3d_pub_range_z", esdf_3d_pub_range_z_);
-
-  lidar_width_ = declare_parameter<int>("lidar_width", lidar_width_);
-  lidar_height_ = declare_parameter<int>("lidar_height", lidar_height_);
-  lidar_vertical_fov_rad_ = declare_parameter<float>("lidar_vertical_fov_rad",
-                                                     lidar_vertical_fov_rad_);
-  slice_visualization_attachment_frame_id_ =
-      declare_parameter<std::string>("slice_visualization_attachment_frame_id",
-                                     slice_visualization_attachment_frame_id_);
-  slice_visualization_side_length_ = declare_parameter<float>(
-      "slice_visualization_side_length", slice_visualization_side_length_);
-
-  line_decomp_x_ = declare_parameter<float>("line_decomp_x", line_decomp_x_);
-  line_decomp_y_ = declare_parameter<float>("line_decomp_y", line_decomp_y_);
-  line_decomp_z_ = declare_parameter<float>("line_decomp_z", line_decomp_z_);
-
-  // Update rates
-  max_depth_update_hz_ =
-      declare_parameter<float>("max_depth_update_hz", max_depth_update_hz_);
-  max_color_update_hz_ =
-      declare_parameter<float>("max_color_update_hz", max_color_update_hz_);
-  max_lidar_update_hz_ =
-      declare_parameter<float>("max_lidar_update_hz", max_lidar_update_hz_);
-  mesh_update_rate_hz_ =
-      declare_parameter<float>("mesh_update_rate_hz", mesh_update_rate_hz_);
-  esdf_update_rate_hz_ =
-      declare_parameter<float>("esdf_update_rate_hz", esdf_update_rate_hz_);
-  esdf_3d_publish_rate_hz_ = declare_parameter<float>("esdf_3d_publish_rate_hz",
-                                                      esdf_3d_publish_rate_hz_);
-  occupancy_publication_rate_hz_ = declare_parameter<float>(
-      "occupancy_publication_rate_hz", occupancy_publication_rate_hz_);
-  max_poll_rate_hz_ =
-      declare_parameter<float>("max_poll_rate_hz", max_poll_rate_hz_);
-
-  maximum_sensor_message_queue_length_ =
-      declare_parameter<int>("maximum_sensor_message_queue_length",
-                             maximum_sensor_message_queue_length_);
-
-  // Settings for QoSr
-  depth_qos_str_ = declare_parameter<std::string>("depth_qos", depth_qos_str_);
-  color_qos_str_ = declare_parameter<std::string>("color_qos", color_qos_str_);
-
-  // Settings for map clearing
-  map_clearing_radius_m_ =
-      declare_parameter<float>("map_clearing_radius_m", map_clearing_radius_m_);
-  map_clearing_frame_id_ = declare_parameter<std::string>(
-      "map_clearing_frame_id", map_clearing_frame_id_);
-  clear_outside_radius_rate_hz_ = declare_parameter<float>(
-      "clear_outside_radius_rate_hz", clear_outside_radius_rate_hz_);
-
-  // Settings for marking the initial sphere as free
-  // will only clear any area if radius > 0
-  mark_free_sphere_radius_ = declare_parameter<float>(
-      "mark_free_sphere_radius_m", mark_free_sphere_radius_);
-  mark_free_sphere_center_x_ = declare_parameter<float>(
-      "mark_free_sphere_center_x", mark_free_sphere_center_x_);
-  mark_free_sphere_center_y_ = declare_parameter<float>(
-      "mark_free_sphere_center_y", mark_free_sphere_center_y_);
-  mark_free_sphere_center_z_ = declare_parameter<float>(
-      "mark_free_sphere_center_z", mark_free_sphere_center_z_);
-}
-
-void NvbloxNode::subscribeToTopics() {
-  RCLCPP_INFO_STREAM(get_logger(), "NvbloxNode::subscribeToTopics()");
-
-  constexpr int kQueueSize = 10;
-
-  if (!use_depth_ && !use_lidar_) {
-    RCLCPP_WARN(
-        get_logger(),
-        "Nvblox is running without depth or lidar input, the cost maps and"
-        " reconstructions will not update");
-  }
-
-  if (use_depth_) {
-    // Subscribe to synchronized depth + cam_info topics
-    depth_sub_.subscribe(this, "depth/image", parseQosString(depth_qos_str_));
-    depth_camera_info_sub_.subscribe(this, "depth/camera_info",
-                                     parseQosString(depth_qos_str_));
-    // TODO(rgg): subscribe to rototranslation error topic?
-    timesync_depth_.reset(new message_filters::Synchronizer<time_policy_t>(
-        time_policy_t(kQueueSize), depth_sub_, depth_camera_info_sub_));
-    timesync_depth_->registerCallback(std::bind(&NvbloxNode::depthImageCallback,
-                                                this, std::placeholders::_1,
-                                                std::placeholders::_2));
-  }
-  if (use_color_) {
-    // Subscribe to synchronized color + cam_info topics
-    color_sub_.subscribe(this, "color/image", parseQosString(color_qos_str_));
-    color_camera_info_sub_.subscribe(this, "color/camera_info",
-                                     parseQosString(color_qos_str_));
-
-    timesync_color_.reset(new message_filters::Synchronizer<time_policy_t>(
-        time_policy_t(kQueueSize), color_sub_, color_camera_info_sub_));
-    timesync_color_->registerCallback(std::bind(&NvbloxNode::colorImageCallback,
-                                                this, std::placeholders::_1,
-                                                std::placeholders::_2));
-  }
-
-  if (use_lidar_) {
-    // Subscribe to pointclouds.
-    pointcloud_sub_ = create_subscription<sensor_msgs::msg::PointCloud2>(
-        "pointcloud", kQueueSize,
-        std::bind(&NvbloxNode::pointcloudCallback, this,
-                  std::placeholders::_1));
-  }
-
-  // Subscribe to transforms.
-  transform_sub_ = create_subscription<geometry_msgs::msg::TransformStamped>(
-      "transform", kQueueSize,
-      std::bind(&Transformer::transformCallback, &transformer_,
-                std::placeholders::_1));
-  pose_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
-      "pose", 10,
-      std::bind(&Transformer::poseCallback, &transformer_,
-                std::placeholders::_1));
-  if (use_certified_tsdf_) {
-    pose_with_error_sub_ = create_subscription<
-        certified_perception_msgs::msg::PoseWithErrorStamped>(
-        "pose_with_error", 10,
-        std::bind(&NvbloxNode::poseWithErrorCallback, this,
-                  std::placeholders::_1));
-  }
-}
-
-void NvbloxNode::advertiseTopics() {
-  RCLCPP_INFO_STREAM(get_logger(), "NvbloxNode::advertiseTopics()");
-
-  mesh_publisher_ = create_publisher<nvblox_msgs::msg::Mesh>("~/mesh", 1);
-  esdf_pointcloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("~/esdf_pointcloud", 1);
-  certified_esdf_pointcloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>(
-          "~/certified_esdf_pointcloud", 1);
-  // Initialize all publishers for the certified tsdf
-  certified_tsdf_cert_distance_pointcloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>(
-          "~/certified_tsdf_cert_distance_pointcloud", 1);
-  certified_tsdf_est_distance_pointcloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>(
-          "~/certified_tsdf_est_distance_pointcloud", 1);
-  certified_tsdf_correction_pointcloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>(
-          "~/certified_tsdf_correction_pointcloud", 1);
-  certified_tsdf_weight_pointcloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>(
-          "~/certified_tsdf_weight_pointcloud", 1);
-  esdfAABB_pointcloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("~/esdfAABB_pointcloud",
-                                                      1);
-  map_slice_publisher_ =
-      create_publisher<nvblox_msgs::msg::DistanceMapSlice>("~/map_slice", 1);
-  certified_map_slice_publisher_ =
-      create_publisher<nvblox_msgs::msg::DistanceMapSlice>("~/certified_map_slice", 1);
-  mesh_marker_publisher_ =
-      create_publisher<visualization_msgs::msg::MarkerArray>("~/mesh_marker",
-                                                             1);
-  mesh_pointcloud_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("~/mesh_point_cloud", 1);
-  slice_bounds_publisher_ = create_publisher<visualization_msgs::msg::Marker>(
-      "~/map_slice_bounds", 1);
-  occupancy_publisher_ =
-      create_publisher<sensor_msgs::msg::PointCloud2>("~/occupancy", 1);
-  sfc_publisher_ =
-      create_publisher<decomp_ros_msgs::msg::PolyhedronStamped>("~/sfc", 1);
-}
-
-void NvbloxNode::advertiseServices() {
-  RCLCPP_INFO_STREAM(get_logger(), "NvbloxNode::advertiseServices()");
-
-  save_ply_service_ = create_service<nvblox_msgs::srv::FilePath>(
-      "~/save_ply",
-      std::bind(&NvbloxNode::savePly, this, std::placeholders::_1,
-                std::placeholders::_2),
-      rmw_qos_profile_services_default, group_processing_);
-  save_ply_with_rotation_service_ = create_service<nvblox_msgs::srv::FilePath>(
-      "~/save_ply_with_rotation",
-      std::bind(&NvbloxNode::savePlyWithRotation, this, std::placeholders::_1,
-                std::placeholders::_2),
-      rmw_qos_profile_services_default, group_processing_);
-  save_map_service_ = create_service<nvblox_msgs::srv::FilePath>(
-      "~/save_map",
-      std::bind(&NvbloxNode::saveMap, this, std::placeholders::_1,
-                std::placeholders::_2),
-      rmw_qos_profile_services_default, group_processing_);
-  load_map_service_ = create_service<nvblox_msgs::srv::FilePath>(
-      "~/load_map",
-      std::bind(&NvbloxNode::loadMap, this, std::placeholders::_1,
-                std::placeholders::_2),
-      rmw_qos_profile_services_default, group_processing_);
-}
-
-void NvbloxNode::setupTimers() {
-  RCLCPP_INFO_STREAM(get_logger(), "NvbloxNode::setupTimers()");
-  if (use_depth_) {
-    depth_processing_timer_ = create_wall_timer(
-        std::chrono::duration<double>(1.0 / max_poll_rate_hz_),
-        std::bind(&NvbloxNode::processDepthQueue, this), group_processing_);
-  }
-  if (use_color_) {
-    color_processing_timer_ = create_wall_timer(
-        std::chrono::duration<double>(1.0 / max_poll_rate_hz_),
-        std::bind(&NvbloxNode::processColorQueue, this), group_processing_);
-  }
-  if (use_lidar_) {
-    pointcloud_processing_timer_ = create_wall_timer(
-        std::chrono::duration<double>(1.0 / max_poll_rate_hz_),
-        std::bind(&NvbloxNode::processPointcloudQueue, this),
-        group_processing_);
-  }
-  if (use_certified_tsdf_) {
-    pose_with_error_processing_timer_ = create_wall_timer(
-        std::chrono::duration<double>(1.0 / max_poll_rate_hz_),
-        std::bind(&NvbloxNode::processPoseWithErrorQueue, this),
-        group_processing_);
-  }
-  esdf_processing_timer_ = create_wall_timer(
-      std::chrono::duration<double>(1.0 / esdf_update_rate_hz_),
-      std::bind(&NvbloxNode::processEsdf, this), group_processing_);
-  if (compute_esdf_ && !esdf_2d_) {
-    esdf_3d_publish_timer_ = create_wall_timer(
-        std::chrono::duration<double>(1.0 / esdf_3d_publish_rate_hz_),
-        std::bind(&NvbloxNode::publishEsdf3d, this), group_processing_);
-  }
-  mesh_processing_timer_ = create_wall_timer(
-      std::chrono::duration<double>(1.0 / mesh_update_rate_hz_),
-      std::bind(&NvbloxNode::processMesh, this), group_processing_);
-
-  certified_mesh_processing_timer_ = create_wall_timer(
-      std::chrono::duration<double>(1.0 / mesh_update_rate_hz_),
-      std::bind(&NvbloxNode::processCertifiedMesh, this), group_processing_);
-
-  if (static_projective_layer_type_ == ProjectiveLayerType::kOccupancy) {
-    occupancy_publishing_timer_ = create_wall_timer(
-        std::chrono::duration<double>(1.0 / occupancy_publication_rate_hz_),
-        std::bind(&NvbloxNode::publishOccupancyPointcloud, this),
-        group_processing_);
-  }
-
-  if (map_clearing_radius_m_ > 0.0f) {
-    clear_outside_radius_timer_ = create_wall_timer(
-        std::chrono::duration<double>(1.0 / clear_outside_radius_rate_hz_),
-        std::bind(&NvbloxNode::clearMapOutsideOfRadiusOfLastKnownPose, this),
-        group_processing_);
-  }
-}
-
-void NvbloxNode::depthImageCallback(
-    const sensor_msgs::msg::Image::ConstSharedPtr& depth_img_ptr,
-    const sensor_msgs::msg::CameraInfo::ConstSharedPtr& camera_info_msg) {
-  printMessageArrivalStatistics(*depth_img_ptr, "Depth Statistics",
-                                &depth_frame_statistics_);
-  pushMessageOntoQueue({depth_img_ptr, camera_info_msg}, &depth_image_queue_,
-                       &depth_queue_mutex_);
-}
-
-void NvbloxNode::colorImageCallback(
-    const sensor_msgs::msg::Image::ConstSharedPtr& color_image_ptr,
-    const sensor_msgs::msg::CameraInfo::ConstSharedPtr& camera_info_msg) {
-  printMessageArrivalStatistics(*color_image_ptr, "Color Statistics",
-                                &rgb_frame_statistics_);
-  pushMessageOntoQueue({color_image_ptr, camera_info_msg}, &color_image_queue_,
-                       &color_queue_mutex_);
-}
-
-void NvbloxNode::pointcloudCallback(
-    const sensor_msgs::msg::PointCloud2::ConstSharedPtr pointcloud) {
-  printMessageArrivalStatistics(*pointcloud, "Pointcloud Statistics",
-                                &pointcloud_frame_statistics_);
-  pushMessageOntoQueue(pointcloud, &pointcloud_queue_,
-                       &pointcloud_queue_mutex_);
-}
-
-void NvbloxNode::poseWithErrorCallback(
-    const certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr
-        pose_with_error) {
-  printMessageArrivalStatistics(*pose_with_error, "Pose with Error Statistics",
-                                &pose_with_error_frame_statistics_);
-  pushMessageOntoQueue(pose_with_error, &pose_with_error_queue_,
-                       &pose_with_error_queue_mutex_);
-}
-
-void NvbloxNode::processDepthQueue() {
-  using ImageInfoMsgPair =
-      std::pair<sensor_msgs::msg::Image::ConstSharedPtr,
-                sensor_msgs::msg::CameraInfo::ConstSharedPtr>;
-  auto message_ready = [this](const ImageInfoMsgPair& msg) {
-    return this->canTransform(msg.first->header);
-  };
-
-  processMessageQueue<ImageInfoMsgPair>(
-      &depth_image_queue_,  // NOLINT
-      &depth_queue_mutex_,  // NOLINT
-      message_ready,        // NOLINT
-      std::bind(&NvbloxNode::processDepthImage, this, std::placeholders::_1));
-
-  limitQueueSizeByDeletingOldestMessages(maximum_sensor_message_queue_length_,
-                                         "depth", &depth_image_queue_,
-                                         &depth_queue_mutex_);
-}
-
-void NvbloxNode::processColorQueue() {
-  using ImageInfoMsgPair =
-      std::pair<sensor_msgs::msg::Image::ConstSharedPtr,
-                sensor_msgs::msg::CameraInfo::ConstSharedPtr>;
-  auto message_ready = [this](const ImageInfoMsgPair& msg) {
-    return this->canTransform(msg.first->header);
-  };
-
-  processMessageQueue<ImageInfoMsgPair>(
-      &color_image_queue_,  // NOLINT
-      &color_queue_mutex_,  // NOLINT
-      message_ready,        // NOLINT
-      std::bind(&NvbloxNode::processColorImage, this, std::placeholders::_1));
-
-  limitQueueSizeByDeletingOldestMessages(maximum_sensor_message_queue_length_,
-                                         "color", &color_image_queue_,
-                                         &color_queue_mutex_);
-}
-
-void NvbloxNode::processPointcloudQueue() {
-  using PointcloudMsg = sensor_msgs::msg::PointCloud2::ConstSharedPtr;
-  auto message_ready = [this](const PointcloudMsg& msg) {
-    return this->canTransform(msg->header);
-  };
-  processMessageQueue<PointcloudMsg>(
-      &pointcloud_queue_,        // NOLINT
-      &pointcloud_queue_mutex_,  // NOLINT
-      message_ready,             // NOLINT
-      std::bind(&NvbloxNode::processLidarPointcloud, this,
-                std::placeholders::_1));
-
-  limitQueueSizeByDeletingOldestMessages(maximum_sensor_message_queue_length_,
-                                         "pointcloud", &pointcloud_queue_,
-                                         &pointcloud_queue_mutex_);
-}
-
-void NvbloxNode::processPoseWithErrorQueue() {
-  using PoseWithErrorMsg =
-      certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr;
-  // TODO(rgg): relevant in the context of poses?
-  auto message_ready = [this](const PoseWithErrorMsg& msg) {
-    return this->canTransform(
-        msg->header);  // Replace with return true if needed.
-  };
-  processMessageQueue<PoseWithErrorMsg>(
-      &pose_with_error_queue_, &pose_with_error_queue_mutex_, message_ready,
-      std::bind(&NvbloxNode::processPoseWithError, this,
-                std::placeholders::_1));
-  // TODO(rgg): assess impact of removing rate limit, as if it occurs it will
-  // compromise theoretical safety guarantee.
-  limitQueueSizeByDeletingOldestMessages(
-      maximum_sensor_message_queue_length_, "pose_with_error",
-      &pose_with_error_queue_, &pose_with_error_queue_mutex_);
 }
 
 void NvbloxNode::processEsdf() {
@@ -932,49 +523,40 @@ void NvbloxNode::processCertifiedMesh() {
   mesh_output_timer.Stop();
 }
 
-bool NvbloxNode::canTransform(const std_msgs::msg::Header& header) {
-  Transform T_L_C;
-  return transformer_.lookupTransformToGlobalFrame(header.frame_id,
-                                                   header.stamp, &T_L_C);
-}
+bool NvbloxNode::processPoseWithRelativeCov(
+    const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr&
+        pose_with_relative_cov) {
 
-bool NvbloxNode::isUpdateTooFrequent(const rclcpp::Time& current_stamp,
-                                     const rclcpp::Time& last_update_stamp,
-                                     float max_update_rate_hz) {
-  if (max_update_rate_hz > 0.0f &&
-      (current_stamp - last_update_stamp).seconds() <
-          1.0f / max_update_rate_hz) {
-    return true;
-  }
-  return false;
-}
-
-bool NvbloxNode::processPoseWithError(
-    const certified_perception_msgs::msg::PoseWithErrorStamped::ConstSharedPtr&
-        pose_with_error) {
-  // Don't bother processing pose with error if certified mapping is not
-  // enabled. There are no other consumers.
-  timing::Timer certified_tsdf_integration_timer("ros/certified_tsdf/deflate");
   if (use_certified_tsdf_) {
-    // Extract actual pose (not PoseWithError). This is T_G_P (global to
+    timing::Timer certified_tsdf_integration_timer("ros/certified_tsdf/deflate");
+
+    // Extract actual pose. This is T_G_P (global to
     // pose). When T_P_S (pose to sensor) is identity, and the layer frame is
     // the global frame, T_G_P is also T_L_C (layer frame to camera).
-    geometry_msgs::msg::Pose pose = pose_with_error->pose;
+    geometry_msgs::msg::Pose pose = pose_with_relative_cov->pose.pose;
     Transform T_L_C =
-        transformer_.poseToEigen(pose);  // This method could be static
-    // Extract error information.
-    float eps_R = pose_with_error->rotation_error;
-    float eps_t = pose_with_error->translation_error;
-    // Deflate the mapper's certified TSDF with the new pose and error
-    // information
-    if (eps_R > 0 || eps_t > 0) {
-      constexpr float kTimeBetweenDebugMessages = 1000.0;
-      RCLCPP_INFO_STREAM_THROTTLE(
-          get_logger(), *get_clock(), kTimeBetweenDebugMessages,
-          "Deflating certified TSDF with eps_R: " << eps_R << " and eps_t: "
-                                                  << eps_t << ".");
-      mapper_->deflateCertifiedTsdf(T_L_C, eps_R, eps_t);
+        transformer_.poseToEigen(pose); 
+
+    // Extract covariance information.
+    TransformCovariance relative_cov = transformer_.covToEigen(pose_with_relative_cov->pose.covariance);
+
+    // check the matrix is close to symmetric
+    if (!relative_cov.isApprox(relative_cov.transpose(), 1e-3)) {
+      RCLCPP_WARN(get_logger(), "relative covariance is not symmetric");
+      return false; // should I deflate everything?
     }
+
+    // grab the min and max eigenvalue 
+    Eigen::SelfAdjointEigenSolver<TransformCovariance> eigensolver(relative_cov);
+    float min_eval = eigensolver.eigenvalues().minCoeff();
+    float max_eval = eigensolver.eigenvalues().maxCoeff();
+
+    constexpr float kTimeBetweenDebugMessages = 1000.0;
+    RCLCPP_INFO_THROTTLE(
+          get_logger(), *get_clock(), kTimeBetweenDebugMessages,
+          "Deflating certified TSDF with covariance in [%1.2g, %1.2g]", min_eval, max_eval);
+
+    mapper_->deflateCertifiedTsdf(T_L_C, relative_cov, certified_n_std_);
   }
   return true;
 }
@@ -1163,153 +745,6 @@ void NvbloxNode::clearMapOutsideOfRadiusOfLastKnownPose() {
           "Tried to clear map outside of radius but couldn't look up frame: "
               << map_clearing_frame_id_);
     }
-  }
-}
-
-// Helper function for ends with. :)
-bool ends_with(const std::string& value, const std::string& ending) {
-  if (ending.size() > value.size()) {
-    return false;
-  }
-  return std::equal(ending.crbegin(), ending.crend(), value.crbegin(),
-                    [](const unsigned char a, const unsigned char b) {
-                      return std::tolower(a) == std::tolower(b);
-                    });
-}
-
-void NvbloxNode::savePly(
-    const std::shared_ptr<nvblox_msgs::srv::FilePath::Request> request,
-    std::shared_ptr<nvblox_msgs::srv::FilePath::Response> response) {
-  // If we get a full path, then write to that path.
-  bool success = false;
-  if (ends_with(request->file_path, ".ply")) {
-    success =
-        io::outputMeshLayerToPly(mapper_->mesh_layer(), request->file_path);
-  } else {
-    // If we get a partial path then output a bunch of stuff to a folder.
-    io::outputVoxelLayerToPly(mapper_->tsdf_layer(),
-                              request->file_path + "/ros2_tsdf.ply");
-    io::outputVoxelLayerToPly(mapper_->esdf_layer(),
-                              request->file_path + "/ros2_esdf.ply");
-    success = io::outputMeshLayerToPly(mapper_->mesh_layer(),
-                                       request->file_path + "/ros2_mesh.ply");
-  }
-  if (success) {
-    RCLCPP_INFO_STREAM(get_logger(),
-                       "Output PLY file(s) to " << request->file_path);
-    response->success = true;
-  } else {
-    RCLCPP_WARN_STREAM(get_logger(),
-                       "Failed to write PLY file(s) to " << request->file_path);
-    response->success = false;
-  }
-}
-
-void NvbloxNode::savePlyWithRotation(
-    const std::shared_ptr<nvblox_msgs::srv::FilePath::Request> request,
-    std::shared_ptr<nvblox_msgs::srv::FilePath::Response> response) {
-  // If we get a full path, then write to that path.
-  if (ends_with(request->file_path, ".ply")) {
-    response->success = false;
-    return;
-  }
-
-  // If we get a partial path then output a bunch of stuff to a folder.
-  // bool success_tsdf = io::outputVoxelLayerToPly(mapper_->tsdf_layer(),
-  //                           request->file_path + "/ros2_tsdf.ply");
-  bool success_esdf = io::outputVoxelLayerToPly(
-      mapper_->esdf_layer(), request->file_path + "/ros2_esdf.ply");
-  bool success_certified_esdf = io::outputVoxelLayerToPly(
-      mapper_->certified_esdf_layer(),
-      request->file_path + "/ros2_certified_esdf.ply");
-
-  bool success_rotation =
-      outputRototranslationToFile(request->file_path + "/rototranslation.txt");
-
-  bool success = success_esdf && success_certified_esdf && success_rotation;
-
-  if (success) {
-    RCLCPP_INFO_STREAM(get_logger(),
-                       "Output PLY file(s) to " << request->file_path);
-    response->success = true;
-  } else {
-    RCLCPP_WARN_STREAM(
-        get_logger(),
-        "Failed to write PLY file(s) to "
-            << request->file_path << ". Success_ESDF: " << success_esdf
-            << " Success_Certified_ESDF: " << success_certified_esdf
-            << " Success_Rototranslation: " << success_rotation);
-    response->success = false;
-  }
-}
-
-bool NvbloxNode::outputRototranslationToFile(const std::string& filename) {
-  // grab the rotation
-  Transform T_L_EO;  // EO = esdf publisher origin frame id
-  // T_L_EO * p_B will return the point expressed in the B (body) frame as a
-  // point in the map frame
-  if (!transformer_.lookupTransformToGlobalFrame(esdf_3d_origin_frame_id_,
-                                                 rclcpp::Time(0), &T_L_EO)) {
-    // could not lookup transform, so return false
-    RCLCPP_WARN(get_logger(), "Could not lookup rototranslation");
-    return false;
-  }
-
-  // open the file
-  std::ofstream file(filename);
-  if (!file) {
-    RCLCPP_WARN(get_logger(),
-                "Could not open file for rototranslation writing");
-    file.close();
-    return false;
-  }
-
-  // write out the homogenous transform from map to bodyframe
-  auto M = T_L_EO.matrix();  // get the matrix
-  file << M;
-
-  // close the file
-  file.close();
-
-  return true;
-}
-
-void NvbloxNode::saveMap(
-    const std::shared_ptr<nvblox_msgs::srv::FilePath::Request> request,
-    std::shared_ptr<nvblox_msgs::srv::FilePath::Response> response) {
-  std::unique_lock<std::mutex> lock1(depth_queue_mutex_);
-  std::unique_lock<std::mutex> lock2(color_queue_mutex_);
-
-  std::string filename = request->file_path;
-  if (!ends_with(request->file_path, ".nvblx")) {
-    filename += ".nvblx";
-  }
-
-  response->success = mapper_->saveMap(filename);
-  if (response->success) {
-    RCLCPP_INFO_STREAM(get_logger(), "Output map to file to " << filename);
-  } else {
-    RCLCPP_WARN_STREAM(get_logger(), "Failed to write file to " << filename);
-  }
-}
-
-void NvbloxNode::loadMap(
-    const std::shared_ptr<nvblox_msgs::srv::FilePath::Request> request,
-    std::shared_ptr<nvblox_msgs::srv::FilePath::Response> response) {
-  std::unique_lock<std::mutex> lock1(depth_queue_mutex_);
-  std::unique_lock<std::mutex> lock2(color_queue_mutex_);
-
-  std::string filename = request->file_path;
-  if (!ends_with(request->file_path, ".nvblx")) {
-    filename += ".nvblx";
-  }
-
-  response->success = mapper_->loadMap(filename);
-  if (response->success) {
-    RCLCPP_INFO_STREAM(get_logger(), "Loaded map to file from " << filename);
-  } else {
-    RCLCPP_WARN_STREAM(get_logger(),
-                       "Failed to load map file from " << filename);
   }
 }
 
