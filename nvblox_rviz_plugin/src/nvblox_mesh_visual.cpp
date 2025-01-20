@@ -115,7 +115,8 @@ std_msgs::msg::ColorRGBA NvbloxMeshVisual::getMeshColorFromColorAndNormal(
     const Ogre::Vector3 light_dir2 =
         Ogre::Vector3(-0.5f, 0.2f, 0.2f).normalisedCopy();
     const Ogre::Vector3 ambient(0.2f, 0.2f, 0.2f);
-    const Ogre::Vector3 color_pt(fixed_color_.r, fixed_color_.g, fixed_color_.b);
+    const Ogre::Vector3 color_pt(fixed_color_.r, fixed_color_.g,
+                                 fixed_color_.b);
     const Ogre::Vector3 normal_pt(normal.x, normal.y, normal.z);
 
     Ogre::Vector3 lambert = lambertShading(normal_pt, light_dir, color_pt) +

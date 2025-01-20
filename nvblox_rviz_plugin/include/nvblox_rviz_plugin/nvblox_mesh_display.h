@@ -21,9 +21,9 @@
 
 #include <rviz_common/message_filter_display.hpp>
 #include <rviz_common/properties/bool_property.hpp>
+#include <rviz_common/properties/color_property.hpp>
 #include <rviz_common/properties/enum_property.hpp>
 #include <rviz_common/properties/float_property.hpp>
-#include <rviz_common/properties/color_property.hpp>
 
 #include <nvblox_msgs/msg/mesh.hpp>
 
