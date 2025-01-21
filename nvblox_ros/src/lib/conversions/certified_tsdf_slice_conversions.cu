@@ -322,12 +322,10 @@ void CertifiedTsdfSliceConverter::sliceImageToPointcloud(
     float z_slice_level, float voxel_size,
     sensor_msgs::msg::PointCloud2* pointcloud_msg) {
   CHECK_NOTNULL(pointcloud_msg);
-  // LOG(INFO) << "Slice image to pointcloud";
-  // LOG(INFO) << "Slice image size: " << map_slice_image.rows() << " x "
-  //           << map_slice_image.cols();
-  // LOG(INFO) << "Slice image numel: " << map_slice_image.numel();
-  // LOG(INFO) << "z_slice_level: " << z_slice_level;
-  // LOG(INFO) << "voxel_size: " << voxel_size;
+  if (map_slice_image.dataConstPtr() == nullptr) {
+    LOG(INFO) << "there is no data in the map slice image, returning empty pointcloud";
+    return;
+  }
 
   // Allocate max space we could take up
   pcl_pointcloud_device_.reserve(map_slice_image.numel());
@@ -348,6 +346,26 @@ void CertifiedTsdfSliceConverter::sliceImageToPointcloud(
       map_slice_image.cols() / kThreadsPerThreadBlock.x + 1,  // NOLINT
       map_slice_image.rows() / kThreadsPerThreadBlock.y + 1,  // NOLINT
       1);
+
+  // check that the num_blocks is not 0
+  if (num_blocks.x == 0 || num_blocks.y == 0) {
+    LOG(ERROR) << "Slice image num_blocks = 0 - too small to convert to pointcloud";
+  }
+
+  LOG(INFO)  << "  **cert_tsdf_convert params: \n"
+            << "  ** num_blocks: " << num_blocks.x << " x " << num_blocks.y << "\n"
+            << "  ** map_slice_image: " << map_slice_image.cols() << " x " << map_slice_image.rows() << "\n"
+            << "  ** aabb: " << aabb.min().transpose() << " - " << aabb.max().transpose() << "\n"
+            << "  ** z_slice_level: " << z_slice_level << "\n"
+            << "  ** voxel_size: " << voxel_size;
+  
+  if (num_blocks.x  > 65535 || num_blocks.y > 65535) {
+    LOG(ERROR) << "Slice image num_blocks too large to convert to pointcloud";
+    // create a segfault
+    int* a = nullptr;
+    *a = 1;
+  }
+
   sliceImageToPointcloudKernelCertTsdf<<<num_blocks, kThreadsPerThreadBlock, 0,
                                          cuda_stream_>>>(
       map_slice_image.dataConstPtr(), map_slice_image.rows(),

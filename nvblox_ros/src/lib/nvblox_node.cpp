@@ -137,20 +137,23 @@ void NvbloxNode::processEsdf() {
     // Get the slice as an image
     timing::Timer esdf_slice_compute_timer("ros/esdf/output/compute");
     AxisAlignedBoundingBox aabb;
-    AxisAlignedBoundingBox certified_aabb;
     Image<float> map_slice_image;
     esdf_slice_converter_.distanceMapSliceImageFromLayer(
         mapper_->esdf_layer(), esdf_slice_height_, &map_slice_image, &aabb);
     esdf_slice_compute_timer.Stop();
 
     // Creating certified distance map slice
+    timing::Timer certified_esdf_slice_compute_timer("ros/certified_esdf/output/compute");
+    AxisAlignedBoundingBox certified_aabb;
     Image<float> certified_map_slice_image;
     certified_esdf_slice_converter_.distanceMapSliceImageFromLayer(
         mapper_->certified_esdf_layer(), esdf_slice_height_,
         &certified_map_slice_image, &certified_aabb);
+    certified_esdf_slice_compute_timer.Stop();
 
     // Slice pointcloud for RVIZ
     if (esdf_pointcloud_publisher_->get_subscription_count() > 0) {
+      LOG(INFO) << "Publishing ESDF pointcloud";
       timing::Timer esdf_output_pointcloud_timer("ros/esdf/output/pointcloud");
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
       esdf_slice_converter_.sliceImageToPointcloud(
@@ -163,6 +166,7 @@ void NvbloxNode::processEsdf() {
 
     // Also publish the map slice (costmap for nav2).
     if (map_slice_publisher_->get_subscription_count() > 0) {
+      LOG(INFO) << "Publishing ESDF map slice";
       timing::Timer esdf_output_human_slice_timer("ros/esdf/output/slice");
       nvblox_msgs::msg::DistanceMapSlice map_slice_msg;
       esdf_slice_converter_.distanceMapSliceImageToMsg(
@@ -173,23 +177,11 @@ void NvbloxNode::processEsdf() {
       map_slice_publisher_->publish(map_slice_msg);
     }
     
-    // Also publish the certified map slice (costmap for nav2).
-    if (certified_map_slice_publisher_->get_subscription_count() > 0) {
-      timing::Timer esdf_output_human_slice_timer("ros/certified_esdf/output/slice");
-      nvblox_msgs::msg::DistanceMapSlice certified_map_slice_msg;
-      certified_esdf_slice_converter_.distanceMapSliceImageToMsg(
-          certified_map_slice_image, certified_aabb, esdf_slice_height_,
-          mapper_->voxel_size_m(), &certified_map_slice_msg);
-      certified_map_slice_msg.header.frame_id = global_frame_;
-      certified_map_slice_msg.header.stamp = get_clock()->now();
-      // LOG(INFO) << "Publishing certified distance map slice";
-      certified_map_slice_publisher_->publish(certified_map_slice_msg);
-    }
 
     // Slice certified ESDF pointcloud for RVIZ
-    if (use_certified_tsdf_ && cert_esdf_blocks > 0 &&
+    if (use_certified_tsdf_ && cert_esdf_blocks > 0 && certified_map_slice_image.dataConstPtr() != nullptr && 
         certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) {
-      // LOG(INFO) << "Publishing certified ESDF pointcloud";
+      LOG(INFO) << "Publishing certified ESDF pointcloud";
       timing::Timer certified_esdf_output_pointcloud_timer(
           "ros/certified_esdf/output/pointcloud");
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
@@ -199,6 +191,19 @@ void NvbloxNode::processEsdf() {
       pointcloud_msg.header.frame_id = global_frame_;
       pointcloud_msg.header.stamp = get_clock()->now();
       certified_esdf_pointcloud_publisher_->publish(pointcloud_msg);
+    }
+    
+    // Also publish the certified map slice (costmap for nav2).
+    if (certified_map_slice_publisher_->get_subscription_count() > 0 && certified_map_slice_image.dataConstPtr() != nullptr) {
+      LOG(INFO) << "Publishing certified ESDF map slice";
+      timing::Timer esdf_output_human_slice_timer("ros/certified_esdf/output/slice");
+      nvblox_msgs::msg::DistanceMapSlice certified_map_slice_msg;
+      certified_esdf_slice_converter_.distanceMapSliceImageToMsg(
+          certified_map_slice_image, certified_aabb, esdf_slice_height_,
+          mapper_->voxel_size_m(), &certified_map_slice_msg);
+      certified_map_slice_msg.header.frame_id = global_frame_;
+      certified_map_slice_msg.header.stamp = get_clock()->now();
+      certified_map_slice_publisher_->publish(certified_map_slice_msg);
     }
 
     // Slice certified TSDF pointcloud for RVIZ
@@ -224,10 +229,23 @@ void NvbloxNode::processEsdf() {
         Image<float> cert_map_slice_image;
         certified_tsdf_slice_converter_.distanceMapSliceImageFromLayer(
             mapper_->certified_tsdf_layer(), esdf_slice_height_,
-            &cert_map_slice_image, &aabb, slice_type);
+            &cert_map_slice_image, &certified_aabb, slice_type);
+
+            // print some deets on the sliceImage
+            LOG(INFO) << "**Slice type: " << static_cast<int>(slice_type) << "\n"
+                      << "**size: " << cert_map_slice_image.width() << "x" << cert_map_slice_image.height() << "\n" 
+                      << "**certified_aabb: " << certified_aabb.min().transpose() << " to " << certified_aabb.max().transpose()
+                      << ((cert_map_slice_image.dataConstPtr() == nullptr)  ? " **no data**" : "there is data");
+
+        if (cert_map_slice_image.dataConstPtr() == nullptr) {
+          // the map slice is empty! 
+          // dont publish anything
+          continue;
+        }
+
         sensor_msgs::msg::PointCloud2 pointcloud_msg;
         certified_tsdf_slice_converter_.sliceImageToPointcloud(
-            cert_map_slice_image, aabb, esdf_slice_height_,
+            cert_map_slice_image, certified_aabb, esdf_slice_height_,
             mapper_->certified_tsdf_layer().voxel_size(), &pointcloud_msg);
         pointcloud_msg.header.frame_id = global_frame_;
         pointcloud_msg.header.stamp = get_clock()->now();
@@ -473,54 +491,29 @@ void NvbloxNode::processCertifiedMesh() {
     return;
   }
 
-  const rclcpp::Time timestamp = get_clock()->now();
-  timing::Timer ros_total_timer("ros/total");
-  timing::Timer ros_mesh_timer("ros/certified_mesh");
+  if (certified_mesh_publisher_->get_subscription_count() > 0) {
+      const rclcpp::Time timestamp = get_clock()->now();
+      timing::Timer ros_total_timer("ros/total");
+      timing::Timer ros_mesh_timer("ros/certified_mesh");
 
-  timing::Timer mesh_integration_timer("ros/certified_mesh/integrate_and_color");
-  mapper_->generateCertifiedMesh();
-  const std::vector<Index3D> mesh_updated_list = 
-        mapper_->tsdf_layer().getAllBlockIndices();
-  mesh_integration_timer.Stop();
+      // create the new mesh
+      timing::Timer mesh_integration_timer("ros/certified_mesh/integrate");
+      mapper_->generateCertifiedMesh();
+      const std::vector<Index3D> mesh_updated_list = 
+            mapper_->certified_mesh_layer().getAllBlockIndices();
+      mesh_integration_timer.Stop();
 
-  // In the case that some mesh blocks have been re-added after deletion, remove
-  // them from the deleted list.
-  for (const Index3D& idx : mesh_updated_list) {
-    certified_mesh_blocks_deleted_.erase(idx);
+      // send the whole mesh
+      timing::Timer mesh_output_timer("ros/certified_mesh/output");
+      nvblox_msgs::msg::Mesh certified_mesh_msg;
+      conversions::meshMessageFromMeshLayer(mapper_->certified_mesh_layer(), &certified_mesh_msg);
+      certified_mesh_msg.clear = true;
+      certified_mesh_msg.header.frame_id = global_frame_;
+      certified_mesh_msg.header.stamp = timestamp;
+      certified_mesh_publisher_->publish(certified_mesh_msg);
+      mesh_output_timer.Stop();
   }
-  // Make a list to be published to rviz of blocks to be removed from the viz
-  const std::vector<Index3D> mesh_blocks_to_delete(certified_mesh_blocks_deleted_.begin(),
-                                                   certified_mesh_blocks_deleted_.end());
-  certified_mesh_blocks_deleted_.clear();
 
-  bool should_publish = !mesh_updated_list.empty();
-
-  // Publish the mesh updates.
-  timing::Timer mesh_output_timer("ros/certified_mesh/output");
-  size_t new_subscriber_count = certified_mesh_publisher_->get_subscription_count();
-  if (new_subscriber_count > 0) {
-    nvblox_msgs::msg::Mesh mesh_msg;
-    // In case we have new subscribers, publish the ENTIRE map once.
-    if (new_subscriber_count > certified_mesh_subscriber_count_) {
-      RCLCPP_INFO(get_logger(), "Got a new subscriber, sending entire map.");
-      conversions::meshMessageFromMeshLayer(mapper_->certified_mesh_layer(), &mesh_msg);
-      mesh_msg.clear = true;
-      should_publish = true;
-    } else {
-      conversions::meshMessageFromMeshBlocks(mapper_->certified_mesh_layer(),
-                                             mesh_updated_list, &mesh_msg,
-                                             mesh_blocks_to_delete);
-    }
-    mesh_msg.header.frame_id = global_frame_;
-    mesh_msg.header.stamp = timestamp;
-    if (should_publish) {
-      certified_mesh_publisher_->publish(mesh_msg);
-    }
-  }
-  certified_mesh_subscriber_count_ = new_subscriber_count;
-
-
-  mesh_output_timer.Stop();
 }
 
 bool NvbloxNode::processPoseWithRelativeCov(

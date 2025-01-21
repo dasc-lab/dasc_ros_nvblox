@@ -126,9 +126,6 @@ void NvbloxNode::processPoseWithRelativeCovQueue() {
       geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr;
 
   auto message_ready = [this](const PoseWithRelativeCovMsg& msg) {
-    // return true;
-    // dont bother checking that we can transform
-    std::cout << "in processPoseWithRelativeCovQueue, checking if canTransform "  << msg->header.frame_id << std::endl;
     return this->canTransform(
         msg->header);
   };
