@@ -153,7 +153,7 @@ void NvbloxNode::processEsdf() {
 
     // Slice pointcloud for RVIZ
     if (esdf_pointcloud_publisher_->get_subscription_count() > 0) {
-      LOG(INFO) << "Publishing ESDF pointcloud";
+      DLOG(INFO) << "Publishing ESDF pointcloud";
       timing::Timer esdf_output_pointcloud_timer("ros/esdf/output/pointcloud");
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
       esdf_slice_converter_.sliceImageToPointcloud(
@@ -166,7 +166,7 @@ void NvbloxNode::processEsdf() {
 
     // Also publish the map slice (costmap for nav2).
     if (map_slice_publisher_->get_subscription_count() > 0) {
-      LOG(INFO) << "Publishing ESDF map slice";
+      DLOG(INFO) << "Publishing ESDF map slice";
       timing::Timer esdf_output_human_slice_timer("ros/esdf/output/slice");
       nvblox_msgs::msg::DistanceMapSlice map_slice_msg;
       esdf_slice_converter_.distanceMapSliceImageToMsg(
@@ -181,7 +181,7 @@ void NvbloxNode::processEsdf() {
     // Slice certified ESDF pointcloud for RVIZ
     if (use_certified_tsdf_ && cert_esdf_blocks > 0 && certified_map_slice_image.dataConstPtr() != nullptr && 
         certified_esdf_pointcloud_publisher_->get_subscription_count() > 0) {
-      LOG(INFO) << "Publishing certified ESDF pointcloud";
+      DLOG(INFO) << "Publishing certified ESDF pointcloud";
       timing::Timer certified_esdf_output_pointcloud_timer(
           "ros/certified_esdf/output/pointcloud");
       sensor_msgs::msg::PointCloud2 pointcloud_msg;
@@ -195,7 +195,7 @@ void NvbloxNode::processEsdf() {
     
     // Also publish the certified map slice (costmap for nav2).
     if (certified_map_slice_publisher_->get_subscription_count() > 0 && certified_map_slice_image.dataConstPtr() != nullptr) {
-      LOG(INFO) << "Publishing certified ESDF map slice";
+      DLOG(INFO) << "Publishing certified ESDF map slice";
       timing::Timer esdf_output_human_slice_timer("ros/certified_esdf/output/slice");
       nvblox_msgs::msg::DistanceMapSlice certified_map_slice_msg;
       certified_esdf_slice_converter_.distanceMapSliceImageToMsg(
@@ -232,7 +232,7 @@ void NvbloxNode::processEsdf() {
             &cert_map_slice_image, &certified_aabb, slice_type);
 
             // print some deets on the sliceImage
-            LOG(INFO) << "**Slice type: " << static_cast<int>(slice_type) << "\n"
+            DLOG(INFO) << "**Slice type: " << static_cast<int>(slice_type) << "\n"
                       << "**size: " << cert_map_slice_image.width() << "x" << cert_map_slice_image.height() << "\n" 
                       << "**certified_aabb: " << certified_aabb.min().transpose() << " to " << certified_aabb.max().transpose()
                       << ((cert_map_slice_image.dataConstPtr() == nullptr)  ? " **no data**" : "there is data");
