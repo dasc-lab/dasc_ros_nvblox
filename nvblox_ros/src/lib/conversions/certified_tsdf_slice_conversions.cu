@@ -323,7 +323,7 @@ void CertifiedTsdfSliceConverter::sliceImageToPointcloud(
     sensor_msgs::msg::PointCloud2* pointcloud_msg) {
   CHECK_NOTNULL(pointcloud_msg);
   if (map_slice_image.dataConstPtr() == nullptr) {
-    LOG(INFO) << "there is no data in the map slice image, returning empty pointcloud";
+    DLOG(INFO) << "there is no data in the map slice image, returning empty pointcloud";
     return;
   }
 
@@ -352,7 +352,7 @@ void CertifiedTsdfSliceConverter::sliceImageToPointcloud(
     LOG(ERROR) << "Slice image num_blocks = 0 - too small to convert to pointcloud";
   }
 
-  LOG(INFO)  << "  **cert_tsdf_convert params: \n"
+  DLOG(INFO)  << "  **cert_tsdf_convert params: \n"
             << "  ** num_blocks: " << num_blocks.x << " x " << num_blocks.y << "\n"
             << "  ** map_slice_image: " << map_slice_image.cols() << " x " << map_slice_image.rows() << "\n"
             << "  ** aabb: " << aabb.min().transpose() << " - " << aabb.max().transpose() << "\n"
