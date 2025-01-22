@@ -115,6 +115,14 @@ class RelativeCovarianceNode : public rclcpp::Node {
     Transform pose = extract_pose(msg);
     CovMatrix cov = extract_covariance(msg);
 
+    // if the largest eigval of cov matrix is too large, something went wrong
+    // just return
+    const float kMaxEigval = 1.0e-3;
+    if (cov.eigenvalues().real().maxCoeff() > kMaxEigval) {
+      RCLCPP_WARN(get_logger(), "covariance matrix eigenvalue is too large");
+      return;
+    }
+
     if (!has_initialized) {
       last_pose_ = pose;
       last_cov_ = cov;
